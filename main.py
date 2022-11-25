@@ -228,7 +228,7 @@ class Trainer:
                 if early_stopping.early_stop:
                     logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
                     break
-            logger.info(f"Total time per epoch: {time.time()-start} seconds", end='\n\n')
+            logger.info(f"Total time per epoch: {time.time()-start} seconds")
         train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
