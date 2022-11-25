@@ -1,40 +1,22 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoTokenizer
-from dataclasses import dataclass
+from transformers import AutoModel
 from typing import List
-
-@dataclass
-class Config:
-    MODEL: str = 'facebook/bart-base'
-    TOKENIZER: str = 'facebook/bart-base'
-    sent_rep_tokens: bool = True
-    n_classes: int = 1
-    pooler_dropout: float = 0.2
-    d_model: int = 512
-    n_head: int = 8
-    ffn_dim: int = 2048
-    dropout: float = 0.1
-    num_layers: int = 2
+from config.config import ModelConf
     
-
-
 class TransformerEncoderClassifier(nn.Module):
-    def __init__(
-        self,
-        n_classes: int,
-        d_model: int,
-        nhead=8,
-        dim_feedforward=2048,
-        dropout=0.1,
-        num_layers=2
-    ):
+    def __init__(self,
+                 n_classes: int,
+                 d_model: int,
+                 nhead=8,
+                 dim_feedforward=2048,
+                 dropout=0.1,
+                 num_layers=2
+        ):
         super(TransformerEncoderClassifier, self).__init__()
 
         self.nhead = nhead
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model, nhead, dim_feedforward=dim_feedforward, dropout=dropout
-        )
+        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward=dim_feedforward, dropout=dropout)
         layer_norm = nn.LayerNorm(d_model)
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers, norm=layer_norm)
 
@@ -53,8 +35,7 @@ class TransformerEncoderClassifier(nn.Module):
         # attn_mask is shape (batch size*num_heads, target sequence length, source sequence length)
         # set all the 0's (False) to negative infinity and the 1's (True) to 0.0 because the
         # attn_mask is additive
-        attn_mask = (
-            attn_mask.float()
+        attn_mask = (attn_mask.float()
             .masked_fill(attn_mask == 0, float("-inf"))
             .masked_fill(attn_mask == 1, float(0.0))
         )
@@ -72,8 +53,6 @@ class TransformerEncoderClassifier(nn.Module):
         
         return torch.sigmoid(sent_scores)
 
-
-
 class Pooling(nn.Module):
     def __init__(self, sent_rep_tokens:bool=True) -> None:
         super(Pooling, self).__init__()
@@ -86,7 +65,7 @@ class Pooling(nn.Module):
             sents_vec = word_vector[torch.arange(word_vector.size(0)).unsqueeze(1), sent_rep_ids]
             sents_vec = sents_vec * sent_rep_mask[:, :, None].float()
             output_vectors.append(sents_vec)
-            output_masks.append(output_masks)
+            output_masks.append(sent_rep_mask)
         
         # batch_size, number of sent_rep_ids, embed_dim
         output_vector = torch.cat(output_vectors, 1)
@@ -130,19 +109,18 @@ class BartGenerationHead(nn.Module):
 
 class BartSum(nn.Module):
     
-    def __init__(self, conf: Config) -> None:
+    def __init__(self, conf: ModelConf) -> None:
         super(BartSum, self).__init__()
         
         self.conf = conf
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(conf.TOKENIZER)
-        self.model = AutoModel.from_pretrained(conf.MODEL)
+        self.name = self.conf.name
+        self.model = AutoModel.from_pretrained(self.conf.pre_trained_name)
         self.pooling = Pooling(sent_rep_tokens=self.conf.sent_rep_tokens)
         self.classifizer_head = TransformerEncoderClassifier(n_classes=self.conf.n_classes,
-                                                             d_model=self.conf.d_model,
+                                                             d_model=self.model.config.hidden_size,
                                                              nhead=self.conf.nhead,
                                                              dim_feedforward=self.conf.ffn_dim,
-                                                             dropout=self.conf.dropout,
+                                                             dropout=self.conf.pooler_dropout,
                                                              num_layers=self.conf.num_layers
                                                              )
         self.generator_head = BartGenerationHead(self.model.config.d_model, self.model.shared.num_embeddings)
@@ -157,6 +135,7 @@ class BartSum(nn.Module):
                 sent_rep_mask: torch.Tensor):
         
         # batch_size, seq_len, embed_dim
+        # print(input_ids.device, attention_mask.device, end='\n\n')
         word_vectors = self.model(input_ids=input_ids, attention_mask=attention_mask)[0]
         
         # batch_size, seq_len, embed_dim

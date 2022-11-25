@@ -1,16 +1,12 @@
-import copy
 import json
 import os
 import logging
-import math
-import torch
 import re
 import pandas as pd
 from time import time
-from typing import List, Union, Optional, Any, Tuple
+from typing import List, Union, Tuple
 from functools import partial
 from multiprocessing import Pool
-import itertools
 import argparse
 import numpy as np
 from tqdm import tqdm
@@ -36,7 +32,6 @@ def clean_text(text: str):
     text = re.sub(r'\s{2,}', '', text)
     return text.strip().lower()
 
-
 def do_tokenize(docs: List[str], name: str) -> List[List[List[str]]]:
     """Split docs into document, each document contains n sentences, each sentence contains n tokens.
 
@@ -58,23 +53,6 @@ def do_tokenize(docs: List[str], name: str) -> List[List[List[str]]]:
     logger.info("Done in %.2f seconds", time()-tic)
 
     return tokenized
-
-def save(json_to_save, output_path, compression=False):
-    """
-    Save ``json_to_save`` to ``output_path`` with optional gzip compresssion
-    specified by ``compression``.
-    """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    logger.info("Saving to %s", output_path)
-    if compression:
-        # https://stackoverflow.com/a/39451012
-        json_str = json.dumps(json_to_save)
-        json_bytes = json_str.encode("utf-8")
-        with gzip.open((output_path + ".gz"), "w") as save_file:
-            save_file.write(json_bytes)
-    else:
-        with open(output_path, "w") as save_file:
-            save_file.write(json.dumps(json_to_save))
 
 def preprocess(example: List[List[str]],
                labels: List[int],
@@ -150,7 +128,7 @@ def save(json_to_save, output_path, compression=False):
         with open(output_path, "w") as save_file:
             save_file.write(json.dumps(json_to_save))
 
-def process_data(file_path: str, args: 'ArgsConf'):
+def process_data(file_path: str, args: 'ArgsConf', output_path: str):
     df: pd.DataFrame = pd.read_csv(filepath_or_buffer=file_path)
     
     src = df[args.src_col_name]
@@ -176,8 +154,8 @@ def process_data(file_path: str, args: 'ArgsConf'):
     del source_tokenized
     del tgt
     logger.info("Done in %.2f seconds", time()-tic)
-    logger.info("Storaged data to ./to_test.json")
-    save(json_to_save=dataset, output_path="./to_test.json")
+    logger.info(f"Storaging data at: {output_path}")
+    save(json_to_save=dataset, output_path=output_path)
 
 @dataclass
 class ArgsConf:
@@ -193,8 +171,11 @@ class ArgsConf:
     
     
 if __name__=='__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file_path', type=str)
+    parser.add_argument('--output_path', type=str)
+    arg_parser = parser.parse_args()
     args = ArgsConf()
-    logger.info("Preparing data...")
-    process_data(file_path="./to_test.csv", args=args)
+    process_data(file_path=arg_parser.file_path, args=args, output_path=arg_parser.output_path)
     
     

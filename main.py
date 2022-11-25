@@ -6,16 +6,15 @@ import torch.nn as nn
 import numpy as np
 import transformers
 import yaml
+import configparser
 from yaml import Loader
-from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
-from typing import Dict, Union, Iterator, List, Optional, Tuple
+from typing import Iterator, Tuple
 
 from modules.data import dataset
 from modules.model import EarlyStopping, AutomaticWeightedLoss, BartSum
-from modules.utils import compute_metrics, set_seed, logger
-
-import configparser
+from modules.utils import set_seed, logger
+from config.config import gen_conf
 
 MODEL_MAP = {
     'bart-sum': BartSum,
@@ -25,71 +24,71 @@ MODEL_MAP = {
 class Trainer:
     def __init__(self, config_file: str, device: torch.device):
     
-        self.conf = configparser.ConfigParser().read(config_file)
+        self.conf = gen_conf(config_file=config_file)
         
-        if self.conf['model']['name'] not in MODEL_MAP:
+        if self.conf.model.name not in MODEL_MAP:
             raise ValueError(f"Model name must be in {MODEL_MAP.keys()}")        
         
-        self.model: nn.Module = MODEL_MAP[self.conf['model']['name']]
+        self.model: nn.Module = MODEL_MAP[self.conf.model.name](self.conf.model)
+        self.model.to(device)
         
-        logger.info(f"Loading {self.conf['dataset']['tokenizer']} tokenizer...")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.conf['dataset']['tokenizer'])
-        logger.info(f"Loaded {self.conf['dataset']['tokenizer']} tokenizer success!")
+        logger.info(f"Loading {self.conf.dataset.tokenizer} tokenizer...")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.conf.dataset.tokenizer)
 
         self.device = device
-        self.num_freeze_layers = self.conf['trainer']['num_freeze_layers']
-        self.epochs = self.conf['trainer']['epochs']
-        self.lr = self.conf['trainer']['lr']
-        self.accumulation_steps = self.conf["trainer"]["accumulation_steps"]
-        self.weight_decay = self.conf['trainer']['weight_decay']
-        self.no_decay = self.conf['trainer']['no_decay']
-        self.patience = self.conf['trainer']['patience']
-        self.delta = self.conf['trainer']['delta']
-        self.eval_steps = self.conf['trainer']['eval_steps']
+        self.num_freeze_layers = self.conf.trainer.num_freeze_layers
+        self.epochs = self.conf.trainer.epochs
+        self.lr = self.conf.trainer.lr
+        self.accumulation_steps = self.conf.trainer.accumulation_steps
+        self.weight_decay = self.conf.trainer.weight_decay
+        self.no_decay = self.conf.trainer.no_decay
+        self.patience = self.conf.trainer.patience
+        self.delta = self.conf.trainer.delta
+        self.eval_steps = self.conf.trainer.eval_steps
 
-        self.train_dataloader, self.n_labels = self.get_dataloader(mode='train')
-        self.conf["storage"]["n_labels"] = self.n_labels
-        self.valid_dataloader, _ = self.get_dataloader(mode='valid')
+        logger.info("Get dataloader")
+        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path)
+        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.val_path)
         self.test_dataloader = None
 
-        self.num_training_steps = len(self.train_dataloader) * self.conf['trainer']['epochs']
-        self.num_warmup_steps = int(self.conf['trainer']['warmup_prop'] * self.num_training_steps)
-        self.conf['storage']['num_training_steps'] = self.num_training_steps
-        self.conf['storage']['num_warmup_steps'] = self.num_warmup_steps
-        self.save_config()
+        self.num_training_steps = len(self.train_dataloader) * self.conf.trainer.epochs
+        self.num_warmup_steps = int(self.conf.trainer.warmup_prop * self.num_training_steps)
 
-        self.ex_criterion = self.create_criterion(criterion="BCELoss")
-        self.ab_criterion = self.create_criterion(criterion="CrossEntropyLoss")
+        self.ex_criterion = self.gen_criterion(criterion=self.conf.trainer.losses[0])
+        self.ab_criterion = self.gen_criterion(criterion=self.conf.trainer.losses[1])
         
-        self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.conf['trainer']['n_losses'])
+        self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.conf.trainer.n_losses)
 
         self.optimizer, self.scheduler = self.create_optimizer_scheduler()
 
-        self.checkpoint = self.config['trainer']['checkpoint']
-        self.log = self.config['trainer']['log']
+        self.checkpoint = self.conf.trainer.checkpoint
+        self.log = self.conf.trainer.log
+        self.setup()
 
-    def read_config(self):
-        logger.info(f"Reading config file at: {self.config_file}...")
-        with open(file=self.config_file, mode='r', encoding='utf-8') as f:
-            config = yaml.load(f, Loader=Loader)
-        logger.info("Successfully!")
-        return config
+    def setup(self):
+        if not os.path.exists('./log'):
+            os.system(f"mkdir ./log")
+            os.system(f"chmod -R 777 ./log")
+        
+        if not os.path.exists('./checkpoint'):
+            os.system(f"mkdir ./checkpoint")
+            os.system(f"chmod -R 777 ./checkpoint")
+            
+        if not os.path.exists('./data'):
+            os.system(f"mkdir ./data")
+            os.system(f"chmod -R 777 ./data")
+        
+        return True
     
-    def save_config(self):
-        logger.info(f"Saving config file to: {self.config_file}...")
-        with open(file=self.config_file, mode='w', encoding='utf-8') as f:
-            yaml.dump(self.config, f)
-        logger.info("Successfully!")
+    def get_dataloader(self, data_path: str):
         
-    def get_dataloader(self, mode: str):
-        
-        if mode not in ['train', 'valid', 'test']:
-            raise ValueError(f"{mode} not in ['train', 'valid', 'test']")
-
-        return dataset(config=self.config['dataset'], tokenizer=self.tokenizer, mode=mode)
+        return dataset(tokenizer=self.tokenizer, 
+                       data_path=data_path,
+                       max_len=self.conf.dataset.max_length,
+                       batch_size=self.conf.dataset.batch_size)
     
     @staticmethod
-    def create_criterion(criterion: str):
+    def gen_criterion(criterion: str):
 
         if criterion not in ['CrossEntropyLoss', 'NLLLoss', 'BCELoss', 'BCEWithLogitsLoss']:
             raise ValueError(f"{criterion} not in current loss functions are supported: ['CrossEntropyLoss', 'NLLLoss', 'BCELoss', 'BCEWithLogitsLoss']")
@@ -105,7 +104,7 @@ class Trainer:
 
     def create_optimizer(self):
         
-        freeze_layers = [f'encoder.layer.{str(idx)}' for idx in range(self.num_freeze_layers)]
+        freeze_layers = [f'{e}.layers.{str(idx)}' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
         for name, param in self.model.named_parameters():
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
@@ -125,8 +124,8 @@ class Trainer:
     
     def create_scheduler(self, optimizer: torch.optim.Optimizer):
         scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
-                                                    num_warmup_steps=self.num_warmup_steps,
-                                                    num_training_steps=self.num_training_steps)
+                                                                                       num_warmup_steps=self.num_warmup_steps,
+                                                                                       num_training_steps=self.num_training_steps)
         
         return scheduler
 
@@ -136,17 +135,20 @@ class Trainer:
         
         return optimizer, scheduler
 
+    def to_input(self, batch: Iterator):
+        return tuple(t.to(self.device) for t in [batch[k] for k in ['src_ids', 'src_mask', 'tgt_ids', 'tgt_mask', 'sent_rep_token_ids', 'sent_rep_mask', 'label']])
+    
     def step(self, batch: Iterator):
-        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, label = tuple(t.to(
-            self.device) for t in [batch['src_ids'], batch['src_mask'], batch['tgt_ids'], batch['tgt_mask'], batch['sent_rep_token_ids'], batch['label']])
+        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
 
         outputs: Tuple[torch.Tensor, torch.Tensor] = self.model(input_ids=input_ids,
                                                                 attention_mask=attention_mask,
                                                                 decoder_input_ids=decoder_input_ids,
                                                                 decoder_attention_mask=decoder_attention_mask,
-                                                                sent_rep_ids=sent_rep_ids)
+                                                                sent_rep_ids=sent_rep_ids,
+                                                                sent_rep_mask=sent_rep_mask)
         
-        ex_loss = self.ex_criterion(outputs[0], label.floats())
+        ex_loss = self.ex_criterion(outputs[0], label.float())
         
         ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
@@ -164,22 +166,26 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             running_loss: float = 0.0
-            preds, targets = list(), list()
             for batch in dataloader:
-                input_ids, attention_mask, token_type_ids, label = tuple(t.to(self.device) for t in batch)
-
-                output: torch.Tensor = self.model(input_ids, attention_mask, token_type_ids)
-                loss: torch.Tensor = self.criterion(output, label.float())
-
+                input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
+                outputs: Tuple[torch.Tensor, torch.Tensor] = self.model(input_ids=input_ids,
+                                                                        attention_mask=attention_mask,
+                                                                        decoder_input_ids=decoder_input_ids,
+                                                                        decoder_attention_mask=decoder_attention_mask,
+                                                                        sent_rep_ids=sent_rep_ids,
+                                                                        sent_rep_mask=sent_rep_mask)
+                ex_loss = self.ex_criterion(outputs[0], label.float())
+        
+                ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+                logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
+                ab_loss = self.ab_criterion(logits, ab_label)
+                
+                loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
-                preds.extend(output.detach().cpu().round())
-                targets.extend(label.detach().cpu())
 
             loss: float = running_loss/(len(dataloader))
-            preds, targets = np.array(preds), np.array(targets)
-            acc, f1, auc = compute_metrics(y_true=targets, y_pred=preds)
 
-        return loss, acc, f1, auc
+        return loss
 
     def train(self):
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
@@ -199,15 +205,15 @@ class Trainer:
                     self.optimizer.step()
                     self.scheduler.step()
                     self.optimizer.zero_grad()
-                if idx+1 % self.eval_steps == 0 or idx == 0:
+                if (idx+1) % self.eval_steps == 0 or idx == 0:
                     print("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
                 print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
                 print("Evaluating...")
-                val_loss, acc, f1, auc = self.validate(dataloader=self.valid_dataloader)
-                print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
+                val_loss = self.validate(dataloader=self.val_dataloader)
+                print("     Val loss: {}\n".format(val_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -216,24 +222,25 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config['storage']['best_checkpoint'] = ckp_path
-                    self.save_config()
+                    # self.config['storage']['best_checkpoint'] = ckp_path
+                    # self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
                     logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
                     break
-            logger.info(f"Total time per epoch: {time.time()-start} seconds")
+            logger.info(f"Total time per epoch: {time.time()-start} seconds", end='\n\n')
         train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
     def test(self):
-        self.train_dataloader, self.valid_dataloader = None, None
-        self.test_dataloader, _ = self.get_dataloader(mode='test')
+        del self.train_dataloader
+        del self.val_dataloader
+        self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path)
         print("Testing...")
-        loss, acc, f1, auc = self.validate(dataloader=self.test_dataloader)
-        print("     Test loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(loss, acc, f1, auc))
+        loss = self.validate(dataloader=self.test_dataloader)
+        print("     Test loss: {}\n".format(loss))
 
-        return loss, acc, f1, auc
+        return loss
 
     def fit(self):
         logger.info("Start training...")
@@ -289,7 +296,7 @@ class Trainer:
                 print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
                 print("Evaluating...")
-                val_loss, acc, f1, auc = self.validate(dataloader=self.valid_dataloader)
+                val_loss, acc, f1, auc = self.validate(dataloader=self.val_dataloader)
                 print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
 
                 train_losses.append(train_losses)
@@ -330,13 +337,18 @@ def str2bool(s: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='./config/config.yaml', help="Path to the config file")
+    parser.add_argument('--config', type=str, default='./config/config.ini', help="Path to the config file")
     parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
 
     args = parser.parse_args()
     set_seed()
+    
+    config = configparser.ConfigParser()
+    config.read(args.config)
+    
+    
     transformers.logging.set_verbosity_error()
-    torch.cuda.set_device(3)
+    torch.cuda.set_device(2)
     os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
     os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
