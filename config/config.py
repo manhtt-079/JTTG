@@ -92,4 +92,4 @@ def gen_conf(config_file: configparser.ConfigParser) -> Conf:
 
     conf = Conf(dataset=dataset_conf, model=model_conf, trainer=trainer_conf)
     
-    return conf
+    return conf, config

@@ -23,8 +23,9 @@ MODEL_MAP = {
 
 class Trainer:
     def __init__(self, config_file: str, device: torch.device):
-    
-        self.conf = gen_conf(config_file=config_file)
+        
+        self.config_file = config_file
+        self.conf, self.config = gen_conf(config_file=config_file)
         
         if self.conf.model.name not in MODEL_MAP:
             raise ValueError(f"Model name must be in {MODEL_MAP.keys()}")        
@@ -73,10 +74,6 @@ class Trainer:
         if not os.path.exists('./checkpoint'):
             os.system(f"mkdir ./checkpoint")
             os.system(f"chmod -R 777 ./checkpoint")
-            
-        if not os.path.exists('./data'):
-            os.system(f"mkdir ./data")
-            os.system(f"chmod -R 777 ./data")
         
         return True
     
@@ -86,6 +83,12 @@ class Trainer:
                        data_path=data_path,
                        max_len=self.conf.dataset.max_length,
                        batch_size=self.conf.dataset.batch_size)
+    
+    def save_config(self):
+        with open(self.config_file, 'wb') as f:
+            self.conf.write(f)
+            
+        return True
     
     @staticmethod
     def gen_criterion(criterion: str):
@@ -222,8 +225,8 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    # self.config['storage']['best_checkpoint'] = ckp_path
-                    # self.save_config()
+                    self.config['trainer']['best_checkpoint'] = ckp_path
+                    self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
                     logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
@@ -247,8 +250,8 @@ class Trainer:
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config['storage']['best_checkpoint']}...")
-        current_epoch = self.load_model(path=self.config['storage']['best_checkpoint'])
+        logger.info(f"Loading the best model from {self.config['trainer']['best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config['trainer']['best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -343,8 +346,8 @@ def main():
     args = parser.parse_args()
     set_seed()
     
-    config = configparser.ConfigParser()
-    config.read(args.config)
+    # config = configparser.ConfigParser()
+    # config.read(args.config)
     
     
     transformers.logging.set_verbosity_error()
