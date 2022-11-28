@@ -2,7 +2,10 @@ import configparser
 from dataclasses import dataclass
 
 def read_conf(conf_file):
-    return configparser.ConfigParser().read(conf_file)
+    config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+    config.read(conf_file)
+    
+    return config
 
 @dataclass
 class DatasetConf:
@@ -51,9 +54,8 @@ class Conf:
     trainer: TrainerConf
     
 
-def gen_conf(config_file: configparser.ConfigParser) -> Conf:
-    config = configparser.ConfigParser()
-    config.read(config_file)
+def gen_conf(config_file: str) -> Conf:
+    config = read_conf(conf_file=config_file)
     
     dataset_conf = DatasetConf(tokenizer=config['dataset']['tokenizer'],
                                batch_size=int(config['dataset']['batch_size']),

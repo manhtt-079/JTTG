@@ -26,17 +26,17 @@ class Trainer:
         
         self.config_file = config_file
         self.conf, self.config = gen_conf(config_file=config_file)
+        self.device = device
         
         if self.conf.model.name not in MODEL_MAP:
             raise ValueError(f"Model name must be in {MODEL_MAP.keys()}")        
         
         self.model: nn.Module = MODEL_MAP[self.conf.model.name](self.conf.model)
-        self.model.to(device)
+        self.model.to(self.device)
         
         logger.info(f"Loading {self.conf.dataset.tokenizer} tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.conf.dataset.tokenizer)
 
-        self.device = device
         self.num_freeze_layers = self.conf.trainer.num_freeze_layers
         self.epochs = self.conf.trainer.epochs
         self.lr = self.conf.trainer.lr
@@ -85,8 +85,8 @@ class Trainer:
                        batch_size=self.conf.dataset.batch_size)
     
     def save_config(self):
-        with open(self.config_file, 'wb') as f:
-            self.conf.write(f)
+        with open(self.config_file, 'w') as f:
+            self.config.write(f)
             
         return True
     

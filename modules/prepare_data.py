@@ -177,5 +177,3 @@ if __name__=='__main__':
     arg_parser = parser.parse_args()
     args = ArgsConf()
     process_data(file_path=arg_parser.file_path, args=args, output_path=arg_parser.output_path)
-    
-    
