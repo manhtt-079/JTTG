@@ -5,10 +5,8 @@ import logging
 import math
 import torch
 
-from typing import List, Union, Optional, Any, Dict
-# from functools import partial
-from multiprocessing import Pool
-from torch.utils.data import Dataset, IterableDataset, DataLoader
+from typing import List, Any, Dict
+from torch.utils.data import IterableDataset, DataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +155,10 @@ class EXSDataset(IterableDataset):
 def dataset(tokenizer,
             data_path: str,
             max_len: int = 512,
-            batch_size: int = 4):
+            batch_size: int = 4,
+            shuffle: bool = True):
 
     tensors = EXSDataset(tokenizer=tokenizer,
                         data_path=data_path, max_length=max_len)
-    iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate)
+    iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle)
     return iterator

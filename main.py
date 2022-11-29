@@ -48,8 +48,8 @@ class Trainer:
         self.eval_steps = self.conf.trainer.eval_steps
 
         logger.info("Get dataloader")
-        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path)
-        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.val_path)
+        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path, shuffle=True)
+        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.val_path, shuffle=False)
         self.test_dataloader = None
 
         self.num_training_steps = len(self.train_dataloader) * self.conf.trainer.epochs
@@ -77,12 +77,13 @@ class Trainer:
         
         return True
     
-    def get_dataloader(self, data_path: str):
+    def get_dataloader(self, data_path: str, shuffle: bool):
         
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        max_len=self.conf.dataset.max_length,
-                       batch_size=self.conf.dataset.batch_size)
+                       batch_size=self.conf.dataset.batch_size,
+                       shuffle=shuffle)
     
     def save_config(self):
         with open(self.config_file, 'w') as f:
@@ -238,10 +239,10 @@ class Trainer:
     def test(self):
         del self.train_dataloader
         del self.val_dataloader
-        self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path)
-        print("Testing...")
+        self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path, shuffle=False)
+        logger.info("Testing...")
         loss = self.validate(dataloader=self.test_dataloader)
-        print("     Test loss: {}\n".format(loss))
+        logger.info("     Test loss: {}\n".format(loss))
 
         return loss
 
