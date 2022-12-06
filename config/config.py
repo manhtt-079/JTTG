@@ -7,14 +7,6 @@ DATASET_ARCHIVE_LIST: List[str] = [
     'bill_sum',
     'vnds'
 ]
-
-
-def read_conf(conf_file):
-    config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
-    config.read(conf_file)
-    
-    return config
-
 @dataclass
 class DataPreparationConf:
     name: str
@@ -44,16 +36,20 @@ class DataPreparationConf:
         if self.test_path=='None':
             self.test_path=None
         
-    
 
 @dataclass
 class DatasetConf:
-    tokenizer: str
+    name: str
     batch_size: int
     max_length: int
+    data_dir: str
     train_path: str
     test_path: str
-    val_path: str
+    valid_path: str
+    
+    def __post_init__(self):
+        self.batch_size = int(self.batch_size)
+        self.max_length = int(self.max_length)
 
 @dataclass
 class ModelConf:
@@ -66,7 +62,17 @@ class ModelConf:
     ffn_dim: int
     num_layers: int
     n_classes: int
+
+    def __post_init__(self):
+        self.sent_rep_tokens = True if self.sent_rep_tokens.lower() == 'true' else False
+        self.pooler_dropout = float(self.pooler_dropout)
+        self.dropout_prop = float(self.dropout_prop)
+        self.nhead = int(self.nhead)
+        self.ffn_dim = int(self.ffn_dim)
+        self.num_layers = int(self.num_layers)
+        self.n_classes = int(self.n_classes)
     
+  
 @dataclass
 class TrainerConf:
     epochs: int
@@ -85,58 +91,61 @@ class TrainerConf:
     patience: int
     warmup_prop: float
     weight_decay: float
+    best_checkpoint: str
     
-@dataclass
+    def __post_init__(self):
+        self.epochs = int(self.epochs)
+        self.losses = self.losses.split(',')
+        self.n_losses = int(self.n_losses)
+        self.accumulation_steps = int(self.accumulation_steps)
+        self.n_training_steps = int(self.n_training_steps)
+        self.n_warmup_steps = int(self.n_warmup_steps)
+        self.delta = float(self.delta)
+        self.eval_steps = int(self.eval_steps)
+        self.lr = float(self.lr)
+        self.no_decay = self.no_decay.split(',')
+        self.num_freeze_layers = int(self.num_freeze_layers)
+        self.patience = int(self.patience)
+        self.warmup_prop = float(self.warmup_prop)
+        self.weight_decay = float(self.weight_decay)
+        
+        
 class Conf:
-    dataset: DatasetConf
-    model: ModelConf
-    trainer: TrainerConf
+    def __init__(self, config_file: str, dataset_name: str, model_name: str) -> None:
+        
+        self.config = self.read_conf(conf_file=config_file)
+        self.dataset = self.gen_dataset_conf(dataset_name=dataset_name)
+        self.model = self.gen_model_conf(model_name=model_name)
+        self.trainer = self.gen_trainer_conf(model_name=model_name)
+
+    @staticmethod
+    def read_conf(conf_file) -> configparser.ConfigParser:
+        config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+        config.read(conf_file)
     
-def gen_datapreparation_conf(conf: configparser.ConfigParser, name: str):
-    if name not in DATASET_ARCHIVE_LIST:
-        raise ValueError(f"Support only dataset in: {DATASET_ARCHIVE_LIST}!")
+        return config
     
-    return DataPreparationConf(name=name, **conf[name])
-
-
-def gen_conf(config_file: str) -> Conf:
-    config = read_conf(conf_file=config_file)
+    def __check_exist(self, section_name: str):
+        if section_name not in self.config.sections():
+            raise ValueError(f"Section: {section_name} not in {self.config.sections()}")
     
-    dataset_conf = DatasetConf(tokenizer=config['dataset']['tokenizer'],
-                               batch_size=int(config['dataset']['batch_size']),
-                               max_length=int(config['dataset']['max_length']),
-                               train_path=config['dataset']['train_path'],
-                               val_path=config['dataset']['valid_path'],
-                               test_path=config['dataset']['test_path']
-                    )
+    def gen_data_preparation_conf(self, name: str):
+        if name not in DATASET_ARCHIVE_LIST:
+            raise ValueError(f"Support only dataset in: {DATASET_ARCHIVE_LIST}!")
+        
+        return DataPreparationConf(name=name, **self.config[name])
 
-    model_conf = ModelConf(name=config['model']['name'],
-                           pre_trained_name=config['model']['pre_trained_name'],
-                           sent_rep_tokens=True if config['model']['sent_rep_tokens'].lower() == 'true' else False,
-                           pooler_dropout=float(config['model']['pooler_dropout']),
-                           dropout_prop=float(config['model']['dropout_prop']),
-                           nhead=int(config['model']['nhead']),
-                           ffn_dim=int(config['model']['ffn_dim']),
-                           num_layers=int(config['model']['num_layers']),
-                           n_classes=int(config['model']['n_classes']))
+    def gen_dataset_conf(self, dataset_name: str) -> DatasetConf:
+        self.__check_exist(dataset_name)
+        return DatasetConf(name=dataset_name, **self.config[dataset_name])
 
-    trainer_conf = TrainerConf(epochs=int(config['trainer']['epochs']),
-                               losses=config['trainer']['losses'].split(','),
-                               n_losses=int(config['trainer']['n_losses']),
-                               accumulation_steps=int(config['trainer']['accumulation_steps']),
-                               n_training_steps=int(config['trainer']['n_training_steps']),
-                               n_warmup_steps=int(config['trainer']['n_warmup_steps']),
-                               checkpoint=config['trainer']['checkpoint'],
-                               delta=float(config['trainer']['delta']),
-                               eval_steps=int(config['trainer']['eval_steps']),
-                               log=config['trainer']['log'],
-                               lr=float(config['trainer']['lr']),
-                               no_decay=config['trainer']['no_decay'].split(','),
-                               num_freeze_layers=int(config['trainer']['num_freeze_layers']),
-                               patience=int(config['trainer']['patience']),
-                               warmup_prop=float(config['trainer']['warmup_prop']),
-                               weight_decay=float(config['trainer']['weight_decay']))
-
-    conf = Conf(dataset=dataset_conf, model=model_conf, trainer=trainer_conf)
+    def gen_model_conf(self, model_name: str) -> ModelConf:
+        self.__check_exist(model_name)
+        return ModelConf(name=model_name, **self.config[model_name])
     
-    return conf, config
+    def gen_trainer_conf(self, model_name: str) -> TrainerConf:
+        model_name = model_name + '-trainer'
+        self.__check_exist(model_name)
+        
+        return TrainerConf(**self.config[model_name])
+        

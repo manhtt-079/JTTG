@@ -5,42 +5,44 @@ import torch
 import torch.nn as nn
 import numpy as np
 import transformers
-import yaml
-import configparser
-from yaml import Loader
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple
 from loguru import logger
 
 from modules.datasets.data import dataset
 from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
-from modules.model.bart_sum import BartSum
-from modules.model.t5_sum import T5Sum
+from modules.model.exa_model import ExA
 
 from modules.utils import set_seed
-from config.config import gen_conf
+from config.config import Conf
 
-MODEL_ARCHIVE_MAP = {
-    'bart-sum': BartSum,
-    't5-sum': T5Sum,
-    'vit5-sum': None
+MODEL_ARCHIVE_LIST = {
+    'bart-sum',
+    't5-sum',
+    'vit5-sum',
+    'bartpho-sum'
 }
 
 class Trainer:
-    def __init__(self, config_file: str, device: torch.device):
+    def __init__(self, 
+                 config_file: str, 
+                 dataset_name: str,
+                 model_name: str,
+                 device: torch.device):
         
         self.config_file = config_file
-        self.conf, self.config = gen_conf(config_file=config_file)
+        self.conf = Conf(config_file=self.config_file, dataset_name=dataset_name, model_name=model_name)
+        self.config = self.conf.config
         self.device = device
         
-        if self.conf.model.name not in MODEL_ARCHIVE_MAP:
-            raise ValueError(f"Model name must be in: {MODEL_ARCHIVE_MAP.keys()}")        
+        if self.conf.model.name not in MODEL_ARCHIVE_LIST:
+            raise ValueError(f"Model name must be in: {MODEL_ARCHIVE_LIST.keys()}")        
         
-        self.model: nn.Module = MODEL_ARCHIVE_MAP[self.conf.model.name](self.conf.model)
+        self.model: nn.Module = ExA(conf=self.conf.model)
         self.model.to(self.device)
         
-        logger.info(f"Loading {self.conf.dataset.tokenizer} tokenizer...")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.conf.dataset.tokenizer)
+        logger.info(f"Loading {self.conf.model.pre_trained_name} tokenizer...")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.conf.model.pre_trained_name)
 
         self.num_freeze_layers = self.conf.trainer.num_freeze_layers
         self.epochs = self.conf.trainer.epochs
@@ -54,7 +56,7 @@ class Trainer:
 
         logger.info("Get dataloader")
         self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path, shuffle=True)
-        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.val_path, shuffle=False)
+        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.valid_path, shuffle=False)
         self.test_dataloader = None
 
         self.num_training_steps = len(self.train_dataloader) * self.conf.trainer.epochs
@@ -72,13 +74,13 @@ class Trainer:
         self.setup()
 
     def setup(self):
-        if not os.path.exists('./log'):
-            os.system(f"mkdir ./log")
-            os.system(f"chmod -R 777 ./log")
+        if not os.path.exists(self.log):
+            os.system(f"mkdir {self.log}")
+            os.system(f"chmod -R 777 {self.log}")
         
-        if not os.path.exists('./checkpoint'):
-            os.system(f"mkdir ./checkpoint")
-            os.system(f"chmod -R 777 ./checkpoint")
+        if not os.path.exists(self.checkpoint):
+            os.system(f"mkdir {self.checkpoint}")
+            os.system(f"chmod -R 777 {self.checkpoint}")
         
         return True
     
@@ -344,29 +346,32 @@ def str2bool(s: str):
     else:
         return argparse.ArgumentTypeError("Boolen values are expected!")
 
+
+def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2,3'):
+    transformers.logging.set_verbosity_error()
+    torch.cuda.set_device(idx)
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='./config/config.ini', help="Path to the config file")
+    parser.add_argument('--dataset_name', type=str, default='./config/config.ini', help="Path to the config file")
+    parser.add_argument('--model_name', type=str, default='./config/config.ini', help="Path to the config file")
     parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
+    parser.add_argument('--gpu_idx', type=int, default=1, help="Path to the config file")
+
 
     args = parser.parse_args()
     set_seed()
-    
-    # config = configparser.ConfigParser()
-    # config.read(args.config)
-    
-    
-    transformers.logging.set_verbosity_error()
-    torch.cuda.set_device(2)
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   
-    os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
+    set_gpu(idx=args.gpu_idx)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # tokenizer = AutoTokenizer.from_pretrained(config['dataset']['tokenizer'])
-
-    # logger.info("Preparing dataloaders...")
     logger.info("Initializing trainer...")
-    trainer = Trainer(device=device, config_file=args.config)
+    trainer = Trainer(config_file=args.config,
+                      dataset_name=args.dataset_name,
+                      model_name=args.model_name,
+                      device=device)
 
     if not args.resume:
         trainer.fit()
