@@ -1,11 +1,50 @@
 import configparser
 from dataclasses import dataclass
+from typing import List
+
+DATASET_ARCHIVE_LIST: List[str] = [
+    'reddit_tifu',
+    'bill_sum',
+    'vnds'
+]
+
 
 def read_conf(conf_file):
     config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
     config.read(conf_file)
     
     return config
+
+@dataclass
+class DataPreparationConf:
+    name: str
+    src_col_name: str
+    tgt_col_name: str
+    top_k: int
+    min_nsents: int
+    max_nsents: int
+    file_path: str
+    is_concat: bool
+    val_path: str
+    test_path: str
+    output_path: str
+    lang: str
+    min_ntokens: int = 5
+    max_ntokens: int = 200
+    n_processes: int = 2
+    no_preprocess: bool = False
+    
+    def __post_init__(self):
+        self.top_k = int(self.top_k)
+        self.min_nsents = int(self.min_nsents)
+        self.max_nsents = int(self.max_nsents)
+        self.is_concat = True if self.is_concat=='True' else False
+        if self.val_path=='None':
+            self.val_path=None
+        if self.test_path=='None':
+            self.test_path=None
+        
+    
 
 @dataclass
 class DatasetConf:
@@ -53,6 +92,12 @@ class Conf:
     model: ModelConf
     trainer: TrainerConf
     
+def gen_datapreparation_conf(conf: configparser.ConfigParser, name: str):
+    if name not in DATASET_ARCHIVE_LIST:
+        raise ValueError(f"Support only dataset in: {DATASET_ARCHIVE_LIST}!")
+    
+    return DataPreparationConf(name=name, **conf[name])
+
 
 def gen_conf(config_file: str) -> Conf:
     config = read_conf(conf_file=config_file)
@@ -66,15 +111,15 @@ def gen_conf(config_file: str) -> Conf:
                     )
 
     model_conf = ModelConf(name=config['model']['name'],
-                             pre_trained_name=config['model']['pre_trained_name'],
-                             sent_rep_tokens=True if config['model']['sent_rep_tokens'].lower() == 'true' else False,
-                             pooler_dropout=float(config['model']['pooler_dropout']),
-                             dropout_prop=float(config['model']['dropout_prop']),
-                             nhead=int(config['model']['nhead']),
-                             ffn_dim=int(config['model']['ffn_dim']),
-                             num_layers=int(config['model']['num_layers']),
-                             n_classes=int(config['model']['n_classes']))
-    
+                           pre_trained_name=config['model']['pre_trained_name'],
+                           sent_rep_tokens=True if config['model']['sent_rep_tokens'].lower() == 'true' else False,
+                           pooler_dropout=float(config['model']['pooler_dropout']),
+                           dropout_prop=float(config['model']['dropout_prop']),
+                           nhead=int(config['model']['nhead']),
+                           ffn_dim=int(config['model']['ffn_dim']),
+                           num_layers=int(config['model']['num_layers']),
+                           n_classes=int(config['model']['n_classes']))
+
     trainer_conf = TrainerConf(epochs=int(config['trainer']['epochs']),
                                losses=config['trainer']['losses'].split(','),
                                n_losses=int(config['trainer']['n_losses']),

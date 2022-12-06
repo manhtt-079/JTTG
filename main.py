@@ -10,15 +10,20 @@ import configparser
 from yaml import Loader
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple
+from loguru import logger
 
-from modules.data import dataset
-from modules.model import EarlyStopping, AutomaticWeightedLoss, BartSum
-from modules.utils import set_seed, logger
+from modules.datasets.data import dataset
+from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
+from modules.model.bart_sum import BartSum
+from modules.model.t5_sum import T5Sum
+
+from modules.utils import set_seed
 from config.config import gen_conf
 
-MODEL_MAP = {
+MODEL_ARCHIVE_MAP = {
     'bart-sum': BartSum,
-    't5-sum': None
+    't5-sum': T5Sum,
+    'vit5-sum': None
 }
 
 class Trainer:
@@ -28,10 +33,10 @@ class Trainer:
         self.conf, self.config = gen_conf(config_file=config_file)
         self.device = device
         
-        if self.conf.model.name not in MODEL_MAP:
-            raise ValueError(f"Model name must be in {MODEL_MAP.keys()}")        
+        if self.conf.model.name not in MODEL_ARCHIVE_MAP:
+            raise ValueError(f"Model name must be in: {MODEL_ARCHIVE_MAP.keys()}")        
         
-        self.model: nn.Module = MODEL_MAP[self.conf.model.name](self.conf.model)
+        self.model: nn.Module = MODEL_ARCHIVE_MAP[self.conf.model.name](self.conf.model)
         self.model.to(self.device)
         
         logger.info(f"Loading {self.conf.dataset.tokenizer} tokenizer...")

@@ -7,3 +7,4 @@ __pycache__
 *.ipynb
 log
 test
+test.py
