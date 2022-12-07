@@ -81,7 +81,7 @@ class TrainerConf:
     accumulation_steps: int
     n_training_steps: int
     n_warmup_steps: int
-    checkpoint: str
+    # checkpoint: str
     delta: float
     eval_steps: int
     log: str
@@ -91,7 +91,7 @@ class TrainerConf:
     patience: int
     warmup_prop: float
     weight_decay: float
-    best_checkpoint: str
+    # best_checkpoint: str
     
     def __post_init__(self):
         self.epochs = int(self.epochs)

@@ -13,7 +13,7 @@ from modules.datasets.data import dataset
 from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
 from modules.model.exa_model import ExA
 
-from modules.utils import set_seed
+from modules.utils import set_seed, compute_metrics
 from config.config import Conf
 
 MODEL_ARCHIVE_LIST = {
@@ -55,8 +55,8 @@ class Trainer:
         self.eval_steps = self.conf.trainer.eval_steps
 
         logger.info("Get dataloader")
-        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path, shuffle=True)
-        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.valid_path, shuffle=False)
+        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path)
+        self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.valid_path)
         self.test_dataloader = None
 
         self.num_training_steps = len(self.train_dataloader) * self.conf.trainer.epochs
@@ -69,7 +69,13 @@ class Trainer:
 
         self.optimizer, self.scheduler = self.create_optimizer_scheduler()
 
-        self.checkpoint = self.conf.trainer.checkpoint
+        self.checkpoint = os.path.join(self.config['checkpoint']['base'], '-'.join([self.conf.model.name, self.conf.dataset.name]))
+        
+        self.best_ckp = '-'.join([self.conf.model.name, self.conf.dataset.name, 'best_ckp'])
+        if not self.config['checkpoint'].get(self.best_ckp):
+            self.config.set('checkpoint', self.best_ckp, '')
+        self.save_config()
+        
         self.log = self.conf.trainer.log
         self.setup()
 
@@ -84,13 +90,12 @@ class Trainer:
         
         return True
     
-    def get_dataloader(self, data_path: str, shuffle: bool):
+    def get_dataloader(self, data_path: str):
         
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        max_len=self.conf.dataset.max_length,
-                       batch_size=self.conf.dataset.batch_size,
-                       shuffle=shuffle)
+                       batch_size=self.conf.dataset.batch_size)
     
     def save_config(self):
         with open(self.config_file, 'w') as f:
@@ -161,6 +166,10 @@ class Trainer:
         
         ex_loss = self.ex_criterion(outputs[0], label.float())
         
+        # decoder_input_ids: [100,1,2,3,4, 5 ]
+        # decoder_labels:    [ 1 ,2,3,4,5]
+        # logits: init len=decoder_input_id len: --> logits[:, :-1] == len(labels)
+        
         ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         ab_loss = self.ab_criterion(logits, ab_label)
@@ -176,7 +185,11 @@ class Trainer:
     def validate(self, dataloader):
         self.model.eval()
         with torch.no_grad():
+        
             running_loss: float = 0.0
+            preds = []
+            labels = []
+            
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
                 outputs: Tuple[torch.Tensor, torch.Tensor] = self.model(input_ids=input_ids,
@@ -193,10 +206,13 @@ class Trainer:
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
+                preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
+                labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
 
+            rouge_score = compute_metrics(predictions=preds, labels=labels, tokenizer=self.tokenizer)
             loss: float = running_loss/(len(dataloader))
 
-        return loss
+        return loss, rouge_score
 
     def train(self):
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
@@ -223,8 +239,9 @@ class Trainer:
                 print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
                 print("Evaluating...")
-                val_loss = self.validate(dataloader=self.val_dataloader)
+                val_loss, rouge_score = self.validate(dataloader=self.val_dataloader)
                 print("     Val loss: {}\n".format(val_loss))
+                print("     Rouge: {}\n".format(rouge_score))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -233,7 +250,7 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config['trainer']['best_checkpoint'] = ckp_path
+                    self.config.set('checkpoint', self.best_ckp, ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -246,10 +263,11 @@ class Trainer:
     def test(self):
         del self.train_dataloader
         del self.val_dataloader
-        self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path, shuffle=False)
+        self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path)
         logger.info("Testing...")
-        loss = self.validate(dataloader=self.test_dataloader)
+        loss, rouge_score = self.validate(dataloader=self.test_dataloader)
         logger.info("     Test loss: {}\n".format(loss))
+        logger.info("     Rouge: {}\n".format(rouge_score))
 
         return loss
 
@@ -258,8 +276,8 @@ class Trainer:
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config['trainer']['best_checkpoint']}...")
-        current_epoch = self.load_model(path=self.config['trainer']['best_checkpoint'])
+        logger.info(f"Loading the best model from {self.config['checkpoint'][self.best_ckp]}...")
+        current_epoch = self.load_model(path=self.config['checkpoint'][self.best_ckp])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -359,7 +377,7 @@ def main():
     parser.add_argument('--dataset_name', type=str, default='./config/config.ini', help="Path to the config file")
     parser.add_argument('--model_name', type=str, default='./config/config.ini', help="Path to the config file")
     parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
-    parser.add_argument('--gpu_idx', type=int, default=1, help="Path to the config file")
+    parser.add_argument('--gpu_idx', type=int, default=3, help="Path to the config file")
 
 
     args = parser.parse_args()

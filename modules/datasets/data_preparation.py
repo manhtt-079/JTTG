@@ -2,7 +2,6 @@ from time import time
 from typing import List
 import re
 import nltk
-import argparse
 import numpy as np
 from tqdm import tqdm
 from loguru import logger
@@ -25,7 +24,8 @@ class VIDataPreparation(DataPreparationBase):
         super().__init__(conf)
         
     def clean_text(self, text: str) -> str:
-        return text.lower()
+        text = re.sub(r"\s{2,}", '', text)
+        return text.strip().lower()
     
     def sent_tokenize(self, doc: str) -> List[str]:
         sents = self.segmenter.word_segment(text=doc)
@@ -55,7 +55,6 @@ class ENDataPreparation(DataPreparationBase):
         text = re.sub('|'.join(list(REMAP.keys())), lambda m: REMAP.get(m.group()), text)
         text = re.sub(r'\s{2,}', '', text)
         return text.strip().lower()
-    
     
     def sent_tokenize(self, doc: str) -> List[str]:
         return nltk.tokenize.sent_tokenize(text=doc)

@@ -153,10 +153,9 @@ class EXSDataset(IterableDataset):
 def dataset(tokenizer,
             data_path: str,
             max_len: int = 512,
-            batch_size: int = 4,
-            shuffle: bool = True):
+            batch_size: int = 4):
 
     tensors = EXSDataset(tokenizer=tokenizer,
                         data_path=data_path, max_length=max_len)
-    iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle)
+    iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate)
     return iterator

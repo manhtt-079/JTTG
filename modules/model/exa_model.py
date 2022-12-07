@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel
-from utils import Pooling, TransformerEncoderClassifier
+from .utils import Pooling, TransformerEncoderClassifier
 from config.config import ModelConf
 
 
