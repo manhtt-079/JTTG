@@ -82,7 +82,7 @@ def batch_collate(batch):
     
     return result
 
-class EXSDataset(IterableDataset):
+class ExAbDataset(IterableDataset):
     def __init__(self, tokenizer, data_path: str, max_length: int = 512) -> None:
         super().__init__()
         self.data_path = data_path
@@ -155,7 +155,6 @@ def dataset(tokenizer,
             max_len: int = 512,
             batch_size: int = 4):
 
-    tensors = EXSDataset(tokenizer=tokenizer,
-                        data_path=data_path, max_length=max_len)
+    tensors = ExAbDataset(tokenizer=tokenizer, data_path=data_path, max_length=max_len)
     iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate)
     return iterator

@@ -5,14 +5,14 @@ from .utils import Pooling, TransformerEncoderClassifier
 from config.config import ModelConf
 
 
-class ExAClassifierHead(nn.Module):
+class ExAbClassifierHead(nn.Module):
     def __init__(self,
                  input_dim: int,
                  inner_dim: int,
                  num_classes: int,
                  pooler_dropout: float
         ) -> None:
-        super(ExAClassifierHead, self).__init__()
+        super(ExAbClassifierHead, self).__init__()
         
         self.ln = nn.Linear(in_features=input_dim, out_features=inner_dim)
         self.gelu = nn.GELU()
@@ -30,19 +30,19 @@ class ExAClassifierHead(nn.Module):
         
         return torch.sigmoid(outputs)
 
-class ExAGenerationHead(nn.Module):
+class ExAbGenerationHead(nn.Module):
     def __init__(self, input_dim: int, vocab_size: int) -> None:
-        super().__init__()
+        super(ExAbGenerationHead, self).__init__()
         
         self.ln = nn.Linear(in_features=input_dim, out_features=vocab_size)
         
     def forward(self, hidden_states: torch.Tensor):
         return self.ln(hidden_states)
 
-class ExA(nn.Module):
+class ExAb(nn.Module):
     
     def __init__(self, conf: ModelConf) -> None:
-        super(ExA, self).__init__()
+        super(ExAb, self).__init__()
         
         self.conf = conf
         self.name = self.conf.name
@@ -55,7 +55,7 @@ class ExA(nn.Module):
                                                             dropout=self.conf.pooler_dropout,
                                                             num_layers=self.conf.num_layers
                                                             )
-        self.generator_head = ExAGenerationHead(self.model.config.d_model, self.model.shared.num_embeddings)
+        self.generator_head = ExAbGenerationHead(self.model.config.d_model, self.model.shared.num_embeddings)
         
         
     def forward(self, 

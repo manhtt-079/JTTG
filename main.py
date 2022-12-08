@@ -9,9 +9,9 @@ from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple
 from loguru import logger
 
-from modules.datasets.data import dataset
+from modules.datasets.dataset import dataset
 from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
-from modules.model.exa_model import ExA
+from modules.model.exa_model import ExAb
 
 from modules.utils import set_seed, compute_metrics
 from config.config import Conf
@@ -22,6 +22,15 @@ MODEL_ARCHIVE_LIST = {
     'vit5-sum',
     'bartpho-sum'
 }
+
+CHECK_POINT_LIST = [
+    'bart-reddit_tifu',
+    'bart-bill_sum',
+    't5-reddit_tifu',
+    't5-bill_sum',
+    'bartpho-vnds',
+    'vit5-nvds'
+]
 
 class Trainer:
     def __init__(self, 
@@ -38,7 +47,7 @@ class Trainer:
         if self.conf.model.name not in MODEL_ARCHIVE_LIST:
             raise ValueError(f"Model name must be in: {MODEL_ARCHIVE_LIST.keys()}")        
         
-        self.model: nn.Module = ExA(conf=self.conf.model)
+        self.model: nn.Module = ExAb(conf=self.conf.model)
         self.model.to(self.device)
         
         logger.info(f"Loading {self.conf.model.pre_trained_name} tokenizer...")
@@ -83,6 +92,12 @@ class Trainer:
         if not os.path.exists(self.log):
             os.system(f"mkdir {self.log}")
             os.system(f"chmod -R 777 {self.log}")
+        
+        ckp_paths = [os.path.join(self.checkpoint, p) for p in CHECK_POINT_LIST]
+        for p in ckp_paths:
+            if not os.path.exists(p):
+                os.system(f"mkdir -p {p}")
+                os.system(f"chmod -R 777 {self.log}")
         
         if not os.path.exists(self.checkpoint):
             os.system(f"mkdir {self.checkpoint}")
@@ -374,8 +389,8 @@ def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2,3'):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='./config/config.ini', help="Path to the config file")
-    parser.add_argument('--dataset_name', type=str, default='./config/config.ini', help="Path to the config file")
-    parser.add_argument('--model_name', type=str, default='./config/config.ini', help="Path to the config file")
+    parser.add_argument('--dataset_name', type=str, default='reddit_tifu_dataset', help="Path to the config file")
+    parser.add_argument('--model_name', type=str, default='bart-sum', help="Path to the config file")
     parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
     parser.add_argument('--gpu_idx', type=int, default=3, help="Path to the config file")
 

@@ -7,34 +7,43 @@ DATASET_ARCHIVE_LIST: List[str] = [
     'bill_sum',
     'vnds'
 ]
-@dataclass
+
 class DataPreparationConf:
-    name: str
-    src_col_name: str
-    tgt_col_name: str
-    top_k: int
-    min_nsents: int
-    max_nsents: int
+    def __init__(self,
+                 name: str,
+                 src_col_name: str,
+                 tgt_col_name: str,
+                 top_k: int,
+                 min_nsents: int,
+                 max_nsents: int,
+                 min_ntokens: int = 5,
+                 max_ntokens: int = 200,
+                 n_processes: int = 2,
+                 no_preprocess: bool = False) -> None:
+        pass
+    def __repr__(self):
+        return self.__dict__()
+
+class Reddit_TIFU_DataPreparationConf(DataPreparationConf):
     file_path: str
-    is_concat: bool
-    val_path: str
-    test_path: str
-    output_path: str
-    lang: str
-    min_ntokens: int = 5
-    max_ntokens: int = 200
-    n_processes: int = 2
-    no_preprocess: bool = False
+    test_size_long: int
+    test_size_short: int
+    long_dir: str
+    short_dir: str
     
-    def __post_init__(self):
-        self.top_k = int(self.top_k)
-        self.min_nsents = int(self.min_nsents)
-        self.max_nsents = int(self.max_nsents)
-        self.is_concat = True if self.is_concat=='True' else False
-        if self.val_path=='None':
-            self.val_path=None
-        if self.test_path=='None':
-            self.test_path=None
+class BillSum_DataPreparationConf(DataPreparationConf):
+    us_train_path: str
+    us_test_path: str
+    ca_test_path: str
+    test_size: int
+    output_path: str
+    
+class Vnds_DataPreparationConf(DataPreparationConf):
+    file_path: str
+    test_size_long: int
+    test_size_short: int
+    long_dir: str
+    short_dir: str
         
 
 @dataclass
