@@ -34,7 +34,7 @@ class DataPreparationBase(ABC):
     def __init__(self, conf: DataPreparationConf) -> None:
         self.conf = conf
         self.data_sep = ['is_train', 'is_val', 'is_test']
-        self.setup()
+        # self.setup()
 
     # def setup(self):
     #     if not os.path.exists(self.conf.output_path):
@@ -174,11 +174,11 @@ class VIDataPreparation(DataPreparationBase):
         super().__init__(conf)
     
     @abstractmethod
-    def build_dataframe(self, *args):
+    def build_data(self):
         raise NotImplementedError()
         
     def clean_text(self, text: str) -> str:
-        text = re.sub(r"\s{2,}", '', text)
+        text = re.sub(r"\s{1,}", '', text)
         return text.strip().lower()
     
     def sent_tokenize(self, doc: str) -> List[str]:
@@ -202,7 +202,7 @@ class ENDataPreparation(DataPreparationBase):
         super().__init__(conf)
     
     @abstractmethod
-    def build_dataframe(self, *args):
+    def buid_data(self):
         raise NotImplementedError()
     
     def clean_text(self, text: str) -> str:
@@ -240,42 +240,12 @@ class RedditTIFUDataPreparation(ENDataPreparation):
     def __init__(self, conf: Reddit_TIFU_DataPreparationConf) -> None:
         super().__init__(conf)
     
-    def build_data(self):
-        posts = self.read_json(self.conf.file_path)
-        if not all(k in posts[0].keys() for k in ['tldr', 'title', 'selftext', 'selftext_without_tldr']):
-            raise KeyError("Missing one of keys: ['tldr', 'title', 'selftext', 'selftext_without_tldr']")
-        
-        long_posts = List[Dict[str, str]] = []
-        short_posts = List[Dict[str, str]] = []
-        
-        for post in posts:
-            if post['selftext_without_tldr']:
-                if post['tldr']:
-                    long_posts.append({'article': post['selftext_without_tldr'], 'summary': post['tldr']})
-                if post['title']:
-                    short_posts.append({'article': post['selftext_without_tldr'], 'summary': post['title']})
-                    
-        if not long_posts or not short_posts:
-            raise ValueError()
-        
-        df_long = self.filter_and_clean(posts=long_posts)
-        df_short = self.filter_and_clean(posts=short_posts)
-        
-        df_long = self.split_data(df=df_long, is_long=True)
-        df_short = self.split_data(df=df_short, is_long=False)
-        
-        logger.info(f"Processing {self.conf.long_dir}")
-        self.process_and_save_data(df=df_long, output_dir=self.conf.long_dir)
-        logger.info(f"Processing {self.conf.short_dir}")
-        self.process_and_save_data(df=df_short, output_dir=self.conf.short_dir)
-        
-    
-    def filter_and_clean(self, posts: List[Dict[str, str]], article_col: str = 'article', summary_col: str = 'summary') -> pd.DataFrame:
+    def filter_and_clean(self, posts: List[Dict[str, str]]) -> pd.DataFrame:
         df = pd.DataFrame(data=posts)
-        df[article_col] = df[article_col].apply(lambda x: self.clean_text(x))
-        df[summary_col] = df[summary_col].apply(lambda x: self.clean_text(x))
-        df = df[(df[article_col]!='') & (df[summary_col]!='')]
-        df.drop_duplicates(subset= [article_col, summary_col], inplace=True)
+        df[self.conf.src_col_name] = df[self.conf.src_col_name].apply(lambda x: self.clean_text(x))
+        df[self.conf.tgt_col_name] = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset= [self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
         
         return df
     
@@ -296,6 +266,34 @@ class RedditTIFUDataPreparation(ENDataPreparation):
         
         return df
 
+    def build_data(self):
+        posts = self.read_json(self.conf.file_path)
+        if not all(k in posts[0].keys() for k in ['tldr', 'title', 'selftext', 'selftext_without_tldr']):
+            raise KeyError("Missing one of keys: ['tldr', 'title', 'selftext', 'selftext_without_tldr']")
+        
+        long_posts: List[Dict[str, str]] = []
+        short_posts: List[Dict[str, str]] = []
+        
+        for post in posts:
+            if post['selftext_without_tldr']:
+                if post['tldr']:
+                    long_posts.append({self.conf.src_col_name: post['selftext_without_tldr'], self.conf.tgt_col_name: post['tldr']})
+                if post['title']:
+                    short_posts.append({self.conf.src_col_name: post['selftext_without_tldr'], self.conf.tgt_col_name: post['title']})
+                    
+        if not long_posts or not short_posts:
+            raise ValueError()
+        
+        df_long = self.filter_and_clean(posts=long_posts)
+        df_short = self.filter_and_clean(posts=short_posts)
+        
+        df_long = self.split_data(df=df_long, is_long=True)
+        df_short = self.split_data(df=df_short, is_long=False)
+        
+        logger.info(f"Processing {self.conf.long_dir}")
+        self.process_and_save_data(df=df_long, output_dir=self.conf.long_dir)
+        logger.info(f"Processing {self.conf.short_dir}")
+        self.process_and_save_data(df=df_short, output_dir=self.conf.short_dir)
 
 class BillSumDataPreparation(ENDataPreparation):
     def __init__(self, conf: DataPreparationConf) -> None:
