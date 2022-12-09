@@ -1,5 +1,5 @@
 import argparse
-# from config.config import gen_data_preparation_conf
+from loguru import logger
 from config.dataset import Reddit_TIFU_DataPreparationConf, BillSum_DataPreparationConf, VnDS_DataPreparationConf
 from modules.datasets.process_data import RedditTIFUDataPreparation, BillSumDataPreparation, VNDSDataPreparation
 
@@ -19,8 +19,9 @@ def main():
     args = parser.parse_args()
     if args.name not in PROCESSOR_ARCHIVE_MAP:
         raise ValueError(f"Dataset name must be in: {PROCESSOR_ARCHIVE_MAP.keys()}")
+    
     pair = PROCESSOR_ARCHIVE_MAP[args.name]
-    config = pair['conf'](config_file=args.conf)
+    config = pair['conf'](config_file=args.config)
     processor = pair['processor'](conf=config)
     
     processor.build_data()

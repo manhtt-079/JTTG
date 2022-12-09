@@ -50,16 +50,18 @@ class BillSum_DataPreparationConf(DataPreparationConf):
         self.us_test_path = self.conf[self.sec_name]['us_test_path']
         self.ca_test_path = self.conf[self.sec_name]['ca_test_path']
         self.test_size = int(self.conf[self.sec_name]['test_size'])
-        
+        self.output_dir = self.conf[self.sec_name]['output_dir']
     
 class VnDS_DataPreparationConf(DataPreparationConf):
     def __init__(self, config_file: str):
         super().__init__(config_file)
         
         self.sec_name = 'vnds'
-        self.file_path = self.conf[self.sec_name]['file_path']
-        self.test_size = int(self.conf[self.sec_name]['test_size'])
-        
+        self.train_path = self.conf[self.sec_name]['train_path']
+        self.val_path = self.conf[self.sec_name]['val_path']
+        self.test_path = self.conf[self.sec_name]['test_path']
+        self.output_dir = self.conf[self.sec_name]['output_dir']
+        self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
         
 if __name__ == '__main__':
     pass

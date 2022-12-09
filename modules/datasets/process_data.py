@@ -1,32 +1,28 @@
-from time import time
-from typing import Dict, List
 import re
 import nltk
 import numpy as np
 from tqdm import tqdm
-from loguru import logger
-try:
-    nltk.data.find('tokenizers/punkt')
-except:
-    nltk.download('punkt', quiet=True)
 import json
 import os
-import re
 import pandas as pd
 from time import time
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from functools import partial
 from multiprocessing import Pool
-import numpy as np
 import gzip
 from sklearn.model_selection import train_test_split
 from abc import ABC, abstractmethod
 from rouge_score import rouge_scorer
 from loguru import logger
-from config.dataset import DataPreparationConf, Reddit_TIFU_DataPreparationConf
+import underthesea
+from config.dataset import DataPreparationConf, Reddit_TIFU_DataPreparationConf, BillSum_DataPreparationConf, VnDS_DataPreparationConf
+try:
+    nltk.data.find('tokenizers/punkt')
+except:
+    nltk.download('punkt', quiet=True)
 
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-SAVE_DIR = "/home/manhtt/anaconda3"
+SAVE_DIR = "./vncorenlp/"
 REMAP = {"-lrb-": "(", "-rrb-": ")", "-lcb-": "{", "-rcb-": "}",
          "-lsb-": "[", "-rsb-": "]", "``": '"', "''": '"', '\xa0': ""}
 
@@ -34,14 +30,7 @@ class DataPreparationBase(ABC):
     def __init__(self, conf: DataPreparationConf) -> None:
         self.conf = conf
         self.data_sep = ['is_train', 'is_val', 'is_test']
-        # self.setup()
 
-    # def setup(self):
-    #     if not os.path.exists(self.conf.output_path):
-    #         os.system(f"mkdir -p {self.conf.output_path}")
-    #         os.system(f"chmod -R 777 {self.conf.output_path}")
-        
-    #     return True
 
     def read_json(self, file_path: str):
         with open(file=file_path, mode='r', encoding='utf-8') as f:
@@ -69,7 +58,7 @@ class DataPreparationBase(ABC):
         example = [example[idx][:self.conf.max_ntokens] for idx in idxs]
         labels = [labels[idx] for idx in idxs]
 
-        example = example[:self.conf.min_nsents]
+        example = example[:self.conf.max_nsents]
         labels = labels[:self.conf.max_nsents]
 
         if len(example) < self.conf.min_nsents:
@@ -168,9 +157,6 @@ class DataPreparationBase(ABC):
 class VIDataPreparation(DataPreparationBase):
     
     def __init__(self, conf: DataPreparationConf) -> None:
-        from py_vncorenlp import VnCoreNLP
-        self.segmenter = VnCoreNLP(annotators=['wseg'], save_dir=SAVE_DIR)
-        
         super().__init__(conf)
     
     @abstractmethod
@@ -182,19 +168,17 @@ class VIDataPreparation(DataPreparationBase):
         return text.strip().lower()
     
     def sent_tokenize(self, doc: str) -> List[str]:
-        sents = self.segmenter.word_segment(text=doc)
-        
-        return [sent.replace('_', ' ') for sent in sents]
+        return underthesea.sent_tokenize(doc)
     
     def tokenize(self, docs: List[str], name: str) -> List[List[List[str]]]:
         doc_segments: List[List[str]] = []
         for doc in tqdm(docs, desc=f'({name}) segment doc', ncols=100, nrows=5, total=len(docs)):
-            d = self.segmenter.word_segment(text=doc)
+            d = self.sent_tokenize(doc)
             doc_segments.append(d)
 
-        tokenized: List[List[List[str]]] = ([[token for token in sentence.split()] for sentence in doc] for doc in tqdm(
-            tokenized, desc=f"({name}) segment to tokens", ncols=100, nrows=5, total=len(tokenized)))
-
+        tokenized: List[List[List[str]]] = ([[token for token in underthesea.word_tokenize(sentence)] for sentence in doc] for doc in tqdm(
+            doc_segments, desc=f"({name}) segment to tokens", ncols=100, nrows=5, total=len(doc_segments)))
+        del doc_segments
         return tokenized
 
 class ENDataPreparation(DataPreparationBase):
@@ -202,7 +186,7 @@ class ENDataPreparation(DataPreparationBase):
         super().__init__(conf)
     
     @abstractmethod
-    def buid_data(self):
+    def build_data(self):
         raise NotImplementedError()
     
     def clean_text(self, text: str) -> str:
@@ -233,12 +217,71 @@ class ENDataPreparation(DataPreparationBase):
         return tokenized
     
 class VNDSDataPreparation(VIDataPreparation):
-    def __init__(self, conf: DataPreparationConf) -> None:
+    def __init__(self, conf: VnDS_DataPreparationConf) -> None:
         super().__init__(conf)
-
+        self.setup()
+        logger.info("Setup done!")
+    
+    def setup(self):
+        if not os.path.exists(self.conf.output_dir):
+            os.system(f"mkdir -p {self.conf.output_dir}")
+            os.system(f"chmod -R 777 {self.conf.output_dir}")
+        
+        return True
+    
+    def filter_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        df[self.conf.src_col_name] = df[self.conf.src_col_name].apply(lambda x: self.clean_text(x))
+        df[self.conf.tgt_col_name] = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset= [self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
+        
+        return df
+    
+    def read_tsv(self, file_path: str) -> pd.DataFrame:
+        sources, targets = [], []
+        with open(file=file_path, mode='r', encoding='utf-8') as f:
+            for line in f:
+                line = line.split(sep='\t')
+                sources.append(line[0].strip())
+                targets.append(line[1].strip())
+        
+        return pd.DataFrame(zip(sources, targets), columns=[self.conf.src_col_name, self.conf.tgt_col_name])
+    
+    def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
+        logger.info(f"Processing {name} data with no. samples: {len(df)}")
+        self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
+    
+    def build_data(self):
+        logger.info("Reading raw_data")
+        df_train = self.read_tsv(self.conf.train_path)
+        df_val = self.read_tsv(self.conf.val_path)
+        df_test = self.read_tsv(self.conf.test_path)
+        
+        df_train = self.filter_and_clean(df_train)
+        df_val = self.filter_and_clean(df_val)
+        df_test = self.filter_and_clean(df_test)
+        
+        logger.info(f"Processing training data")
+        self.process_and_save_data(df=df_train, output_dir=self.conf.output_dir, name='train')
+        logger.info(f"Processing val data")
+        self.process_and_save_data(df=df_val, output_dir=self.conf.output_dir, name='val')
+        logger.info(f"Processing test data")
+        self.process_and_save_data(df=df_test, output_dir=self.conf.output_dir, name='test')
+        
+    
 class RedditTIFUDataPreparation(ENDataPreparation):
     def __init__(self, conf: Reddit_TIFU_DataPreparationConf) -> None:
         super().__init__(conf)
+        self.setup()
+        logger.info('Setup done!')
+    
+    def setup(self):
+        for dir in [self.conf.long_dir, self.conf.short_dir]:
+            if not os.path.exists(dir):
+                os.system(f"mkdir -p {dir}")
+                os.system(f"chmod -R 777 {dir}")
+        
+        return True
     
     def filter_and_clean(self, posts: List[Dict[str, str]]) -> pd.DataFrame:
         df = pd.DataFrame(data=posts)
@@ -295,9 +338,120 @@ class RedditTIFUDataPreparation(ENDataPreparation):
         logger.info(f"Processing {self.conf.short_dir}")
         self.process_and_save_data(df=df_short, output_dir=self.conf.short_dir)
 
+
 class BillSumDataPreparation(ENDataPreparation):
-    def __init__(self, conf: DataPreparationConf) -> None:
+    
+    USC_re = re.compile('[Uu]\.*[Ss]\.*[Cc]\.]+')
+    PAREN_re = re.compile('\([^(]+\ [^\(]+\)')
+    BAD_PUNCT_RE = re.compile(r'([%s])' % re.escape('"#%&\*\+/<=>@[\]^{|}~_'), re.UNICODE)
+    BULLET_RE = re.compile('\n[\ \t]*`*\([a-zA-Z0-9]*\)')
+    DASH_RE = re.compile('--+')
+    WHITESPACE_RE = re.compile('\s+')
+    EMPTY_SENT_RE = re.compile('[,\.]\ *[\.,]')
+    FIX_START_RE = re.compile('^[^A-Za-z]*')
+    FIX_PERIOD = re.compile('\.([A-Za-z])')
+    SECTION_HEADER_RE = re.compile('SECTION [0-9]{1,2}\.|\nSEC\.* [0-9]{1,2}\.|Sec\.* [0-9]{1,2}\.')
+    FIX_PERIOD = re.compile('\.([A-Za-z])')
+    SECTION_HEADER_RE = re.compile('SECTION [0-9]{1,2}\.|\nSEC\.* [0-9]{1,2}\.|Sec\.* [0-9]{1,2}\.')
+    
+    def __init__(self, conf: BillSum_DataPreparationConf) -> None:
         super().__init__(conf)
+        self.setup()
+        logger.info('Setup done!')
+
+    def setup(self):
+        if not os.path.exists(self.conf.output_dir):
+            os.system(f"mkdir -p {self.conf.output_dir}")
+            os.system(f"chmod -R 777 {self.conf.output_dir}")
         
+        return True
+    
+
+    def clean_text(self, text: str):
+        """
+        Borrowed from the FNDS text processing with additional logic added in.
+        Note: we do not take care of token breaking - assume SPACY's tokenizer
+        will handle this for us.
+        
+        Get from https://github.com/FiscalNote/BillSum
+        """
+
+        # Indicate section headers, we need them for features
+        text = self.SECTION_HEADER_RE.sub('SECTION-HEADER', text)
+        # For simplicity later, remove '.' from most common acronym
+        text = text.replace("U.S.", "US")
+        text = text.replace('SEC.', 'Section')
+        text = text.replace('Sec.', 'Section')
+        text = self.USC_re.sub('USC', text)
+
+        # Remove parantheticals because they are almost always references to laws 
+        # We could add a special tag, but we just remove for now
+        # Note we dont get rid of nested parens because that is a complex re
+        text = self.PAREN_re.sub('', text)
+        text = self.BULLET_RE.sub(' ',text)             # Get rid of enums as bullets or ` as bullets
+        text = self.BAD_PUNCT_RE.sub('', text)          # Remove annoying punctuation, that's not relevant
+        text = self.DASH_RE.sub( ' ', text)             # Get rid of long sequences of dashes - these are formating
+        text = self.WHITESPACE_RE.sub(' ', text)        # removing newlines, tabs, and extra spaces
+        text = self.EMPTY_SENT_RE.sub('.', text)        # If we ended up with "empty" sentences - get rid of them.
+        text = self.FIX_START_RE.sub('', text)          # Get rid of anything thats not a word from the start of the text
+        text = self.FIX_PERIOD.sub(". \g<1>", text)     # Sometimes periods get formatted weird, make sure there is a space between periods and start of sent   
+        text = text.replace('&lt;all&gt;', '')          # clean html
+        text = text.replace('``', '"')                  # Fix quotes
+        text = text.replace('\'\'', '"')
+
+        # Add special punct back in
+        text = text.replace('SECTION-HEADER', '<SECTION-HEADER>')
+        text = re.sub(r'\s{1,}', ' ', text)
+
+        return text
+    
+    def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
+        logger.info(f"Processing {name} data with no. samples: {len(df)}")
+        self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
+    
+    def change_col_name_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        df.columns = [self.conf.src_col_name, self.conf.tgt_col_name]
+        df[self.conf.src_col_name] = df[self.conf.src_col_name].apply(lambda x: self.clean_text(x))
+        df[self.conf.tgt_col_name] = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset= [self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
+        
+        return df
+    
+    
+    def split_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        df_train, df_val = train_test_split(df, test_size=self.conf.test_size, shuffle=True, random_state=self.conf.random_state)
+
+        is_train = [True]*len(df_train) + [False]*len(df_val)
+        is_val = [False]*len(df_train) + [True]*len(df_val)
+
+        df = pd.concat([df_train, df_val])
+        df['is_train'] = is_train
+        df['is_val'] = is_val
+        
+        return df
+        
+        
+    def build_data(self):
+        logger.info("Reading raw_data")
+        us_train_df: pd.DataFrame = pd.read_json(self.conf.us_train_path, lines=True)[['text', 'summary']]
+        us_test_df: pd.DataFrame = pd.read_json(self.conf.us_test_path, lines=True)[['text', 'summary']]
+        ca_test_df: pd.DataFrame = pd.read_json(self.conf.ca_test_path, lines=True)[['text', 'summary']]
+        
+        us_train_df = self.change_col_name_and_clean(df=us_train_df)
+        us_train_df = self.split_data(df=us_train_df)
+        
+        us_test_df = self.change_col_name_and_clean(df=us_test_df)
+        ca_test_df = self.change_col_name_and_clean(df=ca_test_df)
+        
+        logger.info(f"Processing training data")
+        self.process_and_save_data(df=us_train_df[us_train_df['is_train']], output_dir=self.conf.output_dir, name='train')
+        self.process_and_save_data(df=us_train_df[us_train_df['is_val']], output_dir=self.conf.output_dir, name='val')
+        logger.info(f"Processing us_test data")
+        self.process_and_save_data(df=us_test_df, output_dir=self.conf.output_dir, name='us_test')
+        logger.info(f"Processing ca_test data")
+        self.process_and_save_data(df=ca_test_df, output_dir=self.conf.output_dir, name='ca_test')
+      
+
 if __name__=='__main__':
     pass
