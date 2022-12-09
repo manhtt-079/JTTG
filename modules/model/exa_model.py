@@ -67,8 +67,7 @@ class ExAb(nn.Module):
                 sent_rep_mask: torch.Tensor):
         
         # batch_size, seq_len, embed_dim
-        # print(input_ids.device, attention_mask.device, end='\n\n')
-        word_vectors = self.model(input_ids=input_ids, attention_mask=attention_mask)[0]
+        word_vectors = self.model.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
         
         # batch_size, seq_len, embed_dim
         lm_hidden_states = self.model(input_ids=input_ids,
@@ -83,6 +82,5 @@ class ExAb(nn.Module):
         cls_logits = self.classifier_head(sent_vecs, sent_mask)
         # batch_size, seq_len, vocab_size
         lm_logits = self.generator_head(hidden_states=lm_hidden_states)
-        
         
         return (cls_logits, lm_logits)
