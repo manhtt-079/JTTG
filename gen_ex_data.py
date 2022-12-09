@@ -1,7 +1,14 @@
 import argparse
 # from config.config import gen_data_preparation_conf
-from config.dataset import Reddit_TIFU_DataPreparationConf
-from modules.datasets.process_data import RedditTIFUDataPreparation
+from config.dataset import Reddit_TIFU_DataPreparationConf, BillSum_DataPreparationConf, VnDS_DataPreparationConf
+from modules.datasets.process_data import RedditTIFUDataPreparation, BillSumDataPreparation, VNDSDataPreparation
+
+
+PROCESSOR_ARCHIVE_MAP = {
+    'reddit_tifu': {'conf': Reddit_TIFU_DataPreparationConf, 'processor': RedditTIFUDataPreparation},
+    'bill_sum': {'conf': BillSum_DataPreparationConf, 'processor': BillSumDataPreparation},
+    'vnds': {'conf': VnDS_DataPreparationConf, 'processor': VNDSDataPreparation}
+}
 
 def main():
     parser = argparse.ArgumentParser()
@@ -10,18 +17,13 @@ def main():
     parser.add_argument('--vi', type=bool, default=False)
 
     args = parser.parse_args()
-    config = Reddit_TIFU_DataPreparationConf(config_file=args.config)
-    if args.name == 'reddit_tifu':
-        processor = RedditTIFUDataPreparation(conf=config)
+    if args.name not in PROCESSOR_ARCHIVE_MAP:
+        raise ValueError(f"Dataset name must be in: {PROCESSOR_ARCHIVE_MAP.keys()}")
+    pair = PROCESSOR_ARCHIVE_MAP[args.name]
+    config = pair['conf'](config_file=args.conf)
+    processor = pair['processor'](conf=config)
     
     processor.build_data()
-    # conf = gen_data_preparation_conf(config_file=args.config, name=args.name)
-    # if args.name in ['reddit_tifu', 'bill_sum']:
-    #     processor = ENDataPreparation(conf=conf)
-    # else:
-    #     processor = VIDataPreparation(conf=conf)    
-    # processor.process_and_save_data()
-    
     
 if __name__=='__main__':
     main()

@@ -52,7 +52,7 @@ class BillSum_DataPreparationConf(DataPreparationConf):
         self.test_size = int(self.conf[self.sec_name]['test_size'])
         
     
-class Vnds_DataPreparationConf(DataPreparationConf):
+class VnDS_DataPreparationConf(DataPreparationConf):
     def __init__(self, config_file: str):
         super().__init__(config_file)
         
