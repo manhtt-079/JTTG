@@ -1,64 +1,56 @@
+import os
 import configparser
 from dataclasses import dataclass
-from typing import List
 
-DATASET_ARCHIVE_LIST: List[str] = [
-    'reddit_tifu',
-    'bill_sum',
-    'vnds'
-]
-
-class DataPreparationConf:
-    def __init__(self,
-                 name: str,
-                 src_col_name: str,
-                 tgt_col_name: str,
-                 top_k: int,
-                 min_nsents: int,
-                 max_nsents: int,
-                 min_ntokens: int = 5,
-                 max_ntokens: int = 200,
-                 n_processes: int = 2,
-                 no_preprocess: bool = False) -> None:
-        pass
-    def __repr__(self):
-        return self.__dict__()
-
-class Reddit_TIFU_DataPreparationConf(DataPreparationConf):
-    file_path: str
-    test_size_long: int
-    test_size_short: int
-    long_dir: str
-    short_dir: str
-    
-class BillSum_DataPreparationConf(DataPreparationConf):
-    us_train_path: str
-    us_test_path: str
-    ca_test_path: str
-    test_size: int
-    output_path: str
-    
-class Vnds_DataPreparationConf(DataPreparationConf):
-    file_path: str
-    test_size_long: int
-    test_size_short: int
-    long_dir: str
-    short_dir: str
+class DatasetBaseConf(object):
+    def __init__(self, 
+                 config: configparser.ConfigParser, 
+                 sec_name: str,
+                 is_long: bool = True,
+                 use_us_test: bool = True) -> None:
         
+        self.config = config
+        self.sec_name = sec_name
+        self.batch_size = int(self.config[self.sec_name]['batch_size'])
+        self.src_max_length = int(self.config[self.sec_name]['src_max_length'])
+        self.tgt_max_length = int(self.config[self.sec_name]['tgt_max_length'])
+        self.data_dir = self.config[self.sec_name].get('data_dir', None)
+        self.is_long = is_long
+        self.use_us_test = use_us_test
 
-@dataclass
-class DatasetConf:
-    name: str
-    batch_size: int
-    max_length: int
-    data_dir: str
-    train_path: str
-    test_path: str
-    valid_path: str
+    def __repr__(self) -> str:
+        return str(self.__dict__)
     
-    def __post_init__(self):
-        self.batch_size = int(self.batch_size)
-        self.max_length = int(self.max_length)
+class VnDsDatasetConf(DatasetBaseConf):
+    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'vnds_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+        super().__init__(config, sec_name, is_long, use_us_test)
+        
+        self.train_path = self.config[self.sec_name]['train_path']
+        self.valid_path = self.config[self.sec_name]['valid_path']
+        self.test_path = self.config[self.sec_name]['test_path']
+
+class BillSumDatasetConf(DatasetBaseConf):
+    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'bill_sum_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+        super().__init__(config, sec_name, is_long, use_us_test)
+        self.train_path = self.config[self.sec_name]['train_path']
+        self.valid_path = self.config[self.sec_name]['valid_path']
+        self.test_path = self.config[self.sec_name]['us_test_path'] if self.use_us_test else self.config[self.sec_name]['ca_test_path']
+        
+        
+class RedditTifuDatasetConf(DatasetBaseConf):
+    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'reddit_tifu_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+        super().__init__(config, sec_name, is_long, use_us_test)
+        
+        self.data_dir = self.config[self.sec_name]['long_dir'] if self.is_long else self.config[self.sec_name]['short_dir']
+        self.train_path = self.join_path(self.data_dir, self.config[self.sec_name]['train_path'])
+        self.valid_path = self.join_path(self.data_dir, self.config[self.sec_name]['valid_path'])
+        self.test_path = self.join_path(self.data_dir, self.config[self.sec_name]['test_path'])
+    
+    @staticmethod
+    def join_path(p1, p2):
+        return os.path.join(p1, p2)
+    
+    
 
 @dataclass
 class ModelConf:
@@ -81,51 +73,19 @@ class ModelConf:
         self.num_layers = int(self.num_layers)
         self.n_classes = int(self.n_classes)
     
-  
-@dataclass
-class TrainerConf:
-    epochs: int
-    losses: list
-    n_losses: int
-    accumulation_steps: int
-    n_training_steps: int
-    n_warmup_steps: int
-    # checkpoint: str
-    delta: float
-    eval_steps: int
-    log: str
-    lr: float
-    no_decay: list
-    num_freeze_layers: int
-    patience: int
-    warmup_prop: float
-    weight_decay: float
-    # best_checkpoint: str
-    
-    def __post_init__(self):
-        self.epochs = int(self.epochs)
-        self.losses = self.losses.split(',')
-        self.n_losses = int(self.n_losses)
-        self.accumulation_steps = int(self.accumulation_steps)
-        self.n_training_steps = int(self.n_training_steps)
-        self.n_warmup_steps = int(self.n_warmup_steps)
-        self.delta = float(self.delta)
-        self.eval_steps = int(self.eval_steps)
-        self.lr = float(self.lr)
-        self.no_decay = self.no_decay.split(',')
-        self.num_freeze_layers = int(self.num_freeze_layers)
-        self.patience = int(self.patience)
-        self.warmup_prop = float(self.warmup_prop)
-        self.weight_decay = float(self.weight_decay)
-        
-        
-class Conf:
-    def __init__(self, config_file: str, dataset_name: str, model_name: str) -> None:
-        
+class TrainerBase(object):
+    def __init__(self, config_file: str) -> None:
         self.config = self.read_conf(conf_file=config_file)
-        self.dataset = self.gen_dataset_conf(dataset_name=dataset_name)
-        self.model = self.gen_model_conf(model_name=model_name)
-        self.trainer = self.gen_trainer_conf(model_name=model_name)
+        
+        self.delta = float(self.config['trainer-base']['delta'])
+        self.eval_steps = int(self.config['trainer-base']['eval_steps'])
+        self.losses = self.config['trainer-base']['losses'].split(',')
+        self.n_losses = int(self.config['trainer-base']['n_losses'])
+        self.no_decay = self.config['trainer-base']['no_decay'].split(',')
+        self.patience = int(self.config['trainer-base']['patience'])
+        self.warmup_prop = float(self.config['trainer-base']['warmup_prop'])
+        self.weight_decay = float(self.config['trainer-base']['weight_decay'])
+
 
     @staticmethod
     def read_conf(conf_file) -> configparser.ConfigParser:
@@ -134,27 +94,132 @@ class Conf:
     
         return config
     
-    def __check_exist(self, section_name: str):
-        if section_name not in self.config.sections():
-            raise ValueError(f"Section: {section_name} not in {self.config.sections()}")
-    
-    def gen_data_preparation_conf(self, name: str):
-        if name not in DATASET_ARCHIVE_LIST:
-            raise ValueError(f"Support only dataset in: {DATASET_ARCHIVE_LIST}!")
-        
-        return DataPreparationConf(name=name, **self.config[name])
+    def __repr__(self) -> str:
+        return str(self.__dict__)
 
-    def gen_dataset_conf(self, dataset_name: str) -> DatasetConf:
-        self.__check_exist(dataset_name)
-        return DatasetConf(name=dataset_name, **self.config[dataset_name])
+class BartDatasetTrainer(TrainerBase):
+    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
+        super().__init__(config)
+        self.sec_name = 'bart-sum-trainer' + dataset_name
 
-    def gen_model_conf(self, model_name: str) -> ModelConf:
-        self.__check_exist(model_name)
-        return ModelConf(name=model_name, **self.config[model_name])
+        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
+        self.checkpoint = self.config[self.sec_name]['checkpoint']
+        self.epochs = int(self.config[self.sec_name]['epochs'])
+        self.log = self.config[self.sec_name]['log']
+        self.lr = float(self.config[self.sec_name]['lr'])
+        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
+        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
+        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
+        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+        
+        
+class T5DatasetTrainer(TrainerBase):
+    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
+        super().__init__(config)
+        self.sec_name = 't5-sum-trainer' + dataset_name
+
+        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
+        self.checkpoint = self.config[self.sec_name]['checkpoint']
+        self.epochs = int(self.config[self.sec_name]['epochs'])
+        self.log = self.config[self.sec_name]['log']
+        self.lr = float(self.config[self.sec_name]['lr'])
+        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
+        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
+        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
+        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+        
+class BartPhoDatasetTrainer(TrainerBase):
+    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
+        super().__init__(config)
+        self.sec_name = 'bartpho-sum-trainer' + dataset_name
+
+        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
+        self.checkpoint = self.config[self.sec_name]['checkpoint']
+        self.epochs = int(self.config[self.sec_name]['epochs'])
+        self.log = self.config[self.sec_name]['log']
+        self.lr = float(self.config[self.sec_name]['lr'])
+        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
+        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
+        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
+        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+        
+class ViT5DatasetTrainer(TrainerBase):
+    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
+        super().__init__(config)
+        self.sec_name = 'vit5-sum-trainer' + dataset_name
+
+        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
+        self.checkpoint = self.config[self.sec_name]['checkpoint']
+        self.epochs = int(self.config[self.sec_name]['epochs'])
+        self.log = self.config[self.sec_name]['log']
+        self.lr = float(self.config[self.sec_name]['lr'])
+        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
+        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
+        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
+        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+
+class Config(object):
     
-    def gen_trainer_conf(self, model_name: str) -> TrainerConf:
-        model_name = model_name + '-trainer'
-        self.__check_exist(model_name)
+    DATASET_CONF_ARCHIVE_MAP = {
+        'reddit_tifu': RedditTifuDatasetConf,
+        'bill_sum': BillSumDatasetConf,
+        'vnds':  VnDsDatasetConf
+    }
+    
+    MODEL_CONF_ARCHIVE_LIST = {
+        'bart-sum',
+        't5-sum',
+        'vit5-sum',
+        'bartpho-sum'
+    }
+    
+    # todo
+    TRAINER_CONF_ARCHIVE_MAP = {
+        'bart-sum-',
+        't5-sum',
+        'vit5-sum',
+        'bartpho-sum'
+    }
+    
+    def __init__(self, 
+                 config_file: str,
+                 dataset_name: str,
+                 model_name: str,
+                 is_long: bool = True,
+                 use_us_test: bool = True
+                 ) -> None:
+        self.conf = self.read_conf(conf_file=config_file)
         
-        return TrainerConf(**self.config[model_name])
+        if dataset_name not in self.DATASET_CONF_ARCHIVE_MAP:
+            raise ValueError(f"Dataset must be in {self.DATASET_CONF_ARCHIVE_MAP.keys()}")
+        if dataset_name not in self.MODEL_CONF_ARCHIVE_LIST:
+            raise ValueError(f"Model name must be in {self.MODEL_CONF_ARCHIVE_LIST}")
         
+        self.dataset_name = dataset_name
+        self.model_name = model_name
+        self.is_long = is_long
+        self.use_us_test = use_us_test
+        
+    
+    @staticmethod
+    def read_conf(conf_file) -> configparser.ConfigParser:
+        config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+        config.read(conf_file)
+    
+        return config
+    
+    @property
+    def trainer(self):
+        
+        return TrainerBase()
+        
+    @property
+    def model(self):
+        return ModelConf(name=self.model_name, pre_trained_name=self.conf[self.model_name]['pre_trained_name'], **self.conf['model_base'])
+    
+    @property
+    def dataset(self):
+        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.conf, is_long=self.is_long, use_us_test=self.use_us_test)
+        
+if __name__=='__main__':
+    pass

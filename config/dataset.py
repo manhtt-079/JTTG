@@ -62,6 +62,7 @@ class VnDS_DataPreparationConf(DataPreparationConf):
         self.test_path = self.conf[self.sec_name]['test_path']
         self.output_dir = self.conf[self.sec_name]['output_dir']
         self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
-        
+
+
 if __name__ == '__main__':
     pass
