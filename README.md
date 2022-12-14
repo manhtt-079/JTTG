@@ -34,7 +34,7 @@
     <img src="./images/ExAb.png" alt="Logo" width="80" height="80">
   </a>
 
-  <h3 align="center">ExA: Fine-tuning pre-trained models for abstractive text summarization</h3>
+  <h3 align="center">ExAb: Fine-tuning pre-trained models for abstractive text summarization</h3>
 </div>
 
 
