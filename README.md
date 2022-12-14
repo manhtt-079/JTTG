@@ -31,7 +31,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/manhtt-079/Fine-tuning-pre-trained-models-for-abstractive-text-summarization">
-    <img src="./images/ExA.png" alt="Logo" width="80" height="80">
+    <img src="./images/ExAb.png" alt="Logo" width="80" height="80">
   </a>
 
   <h3 align="center">ExA: Fine-tuning pre-trained models for abstractive text summarization</h3>
