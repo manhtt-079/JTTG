@@ -74,8 +74,8 @@ class ModelConf:
         self.n_classes = int(self.n_classes)
     
 class TrainerBase(object):
-    def __init__(self, config_file: str) -> None:
-        self.config = self.read_conf(conf_file=config_file)
+    def __init__(self, config: configparser.ConfigParser) -> None:
+        self.config = config
         
         self.delta = float(self.config['trainer-base']['delta'])
         self.eval_steps = int(self.config['trainer-base']['eval_steps'])
@@ -85,22 +85,14 @@ class TrainerBase(object):
         self.patience = int(self.config['trainer-base']['patience'])
         self.warmup_prop = float(self.config['trainer-base']['warmup_prop'])
         self.weight_decay = float(self.config['trainer-base']['weight_decay'])
-
-
-    @staticmethod
-    def read_conf(conf_file) -> configparser.ConfigParser:
-        config =  configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
-        config.read(conf_file)
-    
-        return config
     
     def __repr__(self) -> str:
         return str(self.__dict__)
 
-class BartDatasetTrainer(TrainerBase):
-    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
+class ExAbDatasetTrainer(TrainerBase):
+    def __init__(self, config: configparser.ConfigParser, sec_name: str) -> None:
         super().__init__(config)
-        self.sec_name = 'bart-sum-trainer' + dataset_name
+        self.sec_name = sec_name
 
         self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
         self.checkpoint = self.config[self.sec_name]['checkpoint']
@@ -173,30 +165,24 @@ class Config(object):
         'bartpho-sum'
     }
     
-    # todo
-    TRAINER_CONF_ARCHIVE_MAP = {
-        'bart-sum-',
-        't5-sum',
-        'vit5-sum',
-        'bartpho-sum'
-    }
-    
     def __init__(self, 
                  config_file: str,
                  dataset_name: str,
                  model_name: str,
-                 is_long: bool = True,
-                 use_us_test: bool = True
+                 is_long: bool = None,
+                 use_us_test: bool = None
                  ) -> None:
-        self.conf = self.read_conf(conf_file=config_file)
+        self.config_file = config_file
+        self.config = self.read_conf(conf_file=config_file)
         
         if dataset_name not in self.DATASET_CONF_ARCHIVE_MAP:
             raise ValueError(f"Dataset must be in {self.DATASET_CONF_ARCHIVE_MAP.keys()}")
-        if dataset_name not in self.MODEL_CONF_ARCHIVE_LIST:
+        if model_name not in self.MODEL_CONF_ARCHIVE_LIST:
             raise ValueError(f"Model name must be in {self.MODEL_CONF_ARCHIVE_LIST}")
         
         self.dataset_name = dataset_name
         self.model_name = model_name
+        self.trainer_sec = self.model_name + '-trainer-' + self.dataset_name
         self.is_long = is_long
         self.use_us_test = use_us_test
         
@@ -210,16 +196,15 @@ class Config(object):
     
     @property
     def trainer(self):
-        
-        return TrainerBase()
+        return ExAbDatasetTrainer(config=self.config, sec_name=self.trainer_sec)
         
     @property
     def model(self):
-        return ModelConf(name=self.model_name, pre_trained_name=self.conf[self.model_name]['pre_trained_name'], **self.conf['model_base'])
+        return ModelConf(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
     
     @property
     def dataset(self):
-        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.conf, is_long=self.is_long, use_us_test=self.use_us_test)
+        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.config, is_long=self.is_long, use_us_test=self.use_us_test)
         
 if __name__=='__main__':
     pass

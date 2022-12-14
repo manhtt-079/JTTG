@@ -14,38 +14,16 @@ from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
 from modules.model.exa_model import ExAb
 
 from modules.utils import set_seed, compute_metrics
-from config.config import Conf
+from config.config import Config
 
-MODEL_ARCHIVE_LIST = {
-    'bart-sum',
-    't5-sum',
-    'vit5-sum',
-    'bartpho-sum'
-}
-
-CHECK_POINT_LIST = [
-    'bart-reddit_tifu',
-    'bart-bill_sum',
-    't5-reddit_tifu',
-    't5-bill_sum',
-    'bartpho-vnds',
-    'vit5-nvds'
-]
 
 class Trainer:
-    def __init__(self, 
-                 config_file: str, 
-                 dataset_name: str,
-                 model_name: str,
-                 device: torch.device):
+    def __init__(self, conf: Config, device: torch.device):
         
-        self.config_file = config_file
-        self.conf = Conf(config_file=self.config_file, dataset_name=dataset_name, model_name=model_name)
-        self.config = self.conf.config
-        self.device = device
-        
-        if self.conf.model.name not in MODEL_ARCHIVE_LIST:
-            raise ValueError(f"Model name must be in: {MODEL_ARCHIVE_LIST.keys()}")        
+        self.config_file = conf.config_file
+        self.conf = conf
+        self.config_parser = self.conf.config
+        self.device = device     
         
         self.model: nn.Module = ExAb(conf=self.conf.model)
         self.model.to(self.device)
@@ -53,10 +31,11 @@ class Trainer:
         logger.info(f"Loading {self.conf.model.pre_trained_name} tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.conf.model.pre_trained_name)
 
-        self.num_freeze_layers = self.conf.trainer.num_freeze_layers
-        self.epochs = self.conf.trainer.epochs
-        self.lr = self.conf.trainer.lr
         self.accumulation_steps = self.conf.trainer.accumulation_steps
+        self.epochs = self.conf.trainer.epochs
+        self.log = self.conf.trainer.log
+        self.lr = self.conf.trainer.lr
+        self.num_freeze_layers = self.conf.trainer.num_freeze_layers
         self.weight_decay = self.conf.trainer.weight_decay
         self.no_decay = self.conf.trainer.no_decay
         self.patience = self.conf.trainer.patience
@@ -77,27 +56,19 @@ class Trainer:
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.conf.trainer.n_losses)
 
         self.optimizer, self.scheduler = self.create_optimizer_scheduler()
-
-        self.checkpoint = os.path.join(self.config['checkpoint']['base'], '-'.join([self.conf.model.name, self.conf.dataset.name]))
         
-        self.best_ckp = '-'.join([self.conf.model.name, self.conf.dataset.name, 'best_ckp'])
-        if not self.config['checkpoint'].get(self.best_ckp):
-            self.config.set('checkpoint', self.best_ckp, '')
+        self.checkpoint = self.conf.trainer.checkpoint
+        self.best_checkpoint = self.conf.trainer.best_checkpoint
+        self.config_parser[self.conf.trainer.sec_name]['n_training_steps'] = self.num_training_steps
+        self.config_parser[self.conf.trainer.sec_name]['n_warmup_steps'] = self.num_warmup_steps
+        
         self.save_config()
-        
-        self.log = self.conf.trainer.log
         self.setup()
 
     def setup(self):
         if not os.path.exists(self.log):
             os.system(f"mkdir {self.log}")
             os.system(f"chmod -R 777 {self.log}")
-        
-        ckp_paths = [os.path.join(self.checkpoint, p) for p in CHECK_POINT_LIST]
-        for p in ckp_paths:
-            if not os.path.exists(p):
-                os.system(f"mkdir -p {p}")
-                os.system(f"chmod -R 777 {self.log}")
         
         if not os.path.exists(self.checkpoint):
             os.system(f"mkdir {self.checkpoint}")
@@ -114,7 +85,7 @@ class Trainer:
     
     def save_config(self):
         with open(self.config_file, 'w') as f:
-            self.config.write(f)
+            self.config_parser.write(f)
             
         return True
     
@@ -265,7 +236,7 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config.set('checkpoint', self.best_ckp, ckp_path)
+                    self.config_parser.set('checkpoint', self.best_checkpoint, ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -291,8 +262,8 @@ class Trainer:
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config['checkpoint'][self.best_ckp]}...")
-        current_epoch = self.load_model(path=self.config['checkpoint'][self.best_ckp])
+        logger.info(f"Loading the best model from {self.config_parser['checkpoint'][self.best_checkpoint]}...")
+        current_epoch = self.load_model(path=self.config_parser['checkpoint'][self.best_checkpoint])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -315,11 +286,11 @@ class Trainer:
         }, path)
 
     def resume(self):
-        current_epoch = self.load_model(path=self.config['trainer']['resume']['path'])
+        current_epoch = self.load_model(path=self.config_parser['trainer']['resume']['path'])
         logger.info(f"Continuing training model from epoch {current_epoch}...")
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
         train_losses, val_losses = [], []
-        for epoch in range(current_epoch, current_epoch + self.config['trainer']['resume']['epochs']):
+        for epoch in range(current_epoch, current_epoch + self.config_parser['trainer']['resume']['epochs']):
             start = time.time()
             self.model.train()
 
@@ -351,7 +322,7 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config['storage']['resume_best_checkpoint'] = ckp_path
+                    self.config_parser['storage']['resume_best_checkpoint'] = ckp_path
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -363,8 +334,8 @@ class Trainer:
         np.savetxt(os.path.join(self.log, 'resume_loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
         logger.info("Start testing resume...")
-        logger.info(f"Loading the best model from {self.config['storage']['resume_best_checkpoint']}...")
-        current_epoch = self.load_model(path=self.config['storage']['resume_best_checkpoint'])
+        logger.info(f"Loading the best model from {self.config_parser['storage']['resume_best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config_parser['storage']['resume_best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -388,9 +359,11 @@ def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2,3'):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='./config/config.ini', help="Path to the config file")
+    parser.add_argument('--config_file', type=str, default='./config/config.ini', help="Path to the config file")
     parser.add_argument('--dataset_name', type=str, default='reddit_tifu_dataset', help="Path to the config file")
     parser.add_argument('--model_name', type=str, default='bart-sum', help="Path to the config file")
+    parser.add_argument('--is_long', type=str2bool, const=True, nargs="?", default=False)
+    parser.add_argument('--use_us_test', type=str2bool, const=True, nargs="?", default=False)
     parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
     parser.add_argument('--gpu_idx', type=int, default=3, help="Path to the config file")
 
@@ -400,11 +373,10 @@ def main():
     set_gpu(idx=args.gpu_idx)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    config = Config(config_file=args.config_file, dataset_name=args.dataset_name, model_name=args.model_name, is_long=args.is_long, use_us_test=args.use_us_test)
+    
     logger.info("Initializing trainer...")
-    trainer = Trainer(config_file=args.config,
-                      dataset_name=args.dataset_name,
-                      model_name=args.model_name,
-                      device=device)
+    trainer = Trainer(conf=config ,device=device)
 
     if not args.resume:
         trainer.fit()
