@@ -25,6 +25,7 @@ class Trainer:
         self.config_parser = self.conf.config
         self.device = device     
         
+        logger.info(f'Initting and loading model_checkpoint: {self.conf.model.pre_trained_name}')
         self.model: nn.Module = ExAb(conf=self.conf.model)
         self.model.to(self.device)
         
@@ -59,19 +60,19 @@ class Trainer:
         
         self.checkpoint = self.conf.trainer.checkpoint
         self.best_checkpoint = self.conf.trainer.best_checkpoint
-        self.config_parser[self.conf.trainer.sec_name]['n_training_steps'] = self.num_training_steps
-        self.config_parser[self.conf.trainer.sec_name]['n_warmup_steps'] = self.num_warmup_steps
+        self.config_parser[self.conf.trainer.sec_name]['n_training_steps'] = str(self.num_training_steps)
+        self.config_parser[self.conf.trainer.sec_name]['n_warmup_steps'] = str(self.num_warmup_steps)
         
         self.save_config()
         self.setup()
 
     def setup(self):
         if not os.path.exists(self.log):
-            os.system(f"mkdir {self.log}")
+            os.system(f"mkdir -p {self.log}")
             os.system(f"chmod -R 777 {self.log}")
         
         if not os.path.exists(self.checkpoint):
-            os.system(f"mkdir {self.checkpoint}")
+            os.system(f"mkdir -p {self.checkpoint}")
             os.system(f"chmod -R 777 {self.checkpoint}")
         
         return True
@@ -80,7 +81,8 @@ class Trainer:
         
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
-                       max_len=self.conf.dataset.max_length,
+                       src_max_length=self.conf.dataset.src_max_length,
+                       tgt_max_length=self.conf.dataset.tgt_max_length,
                        batch_size=self.conf.dataset.batch_size)
     
     def save_config(self):

@@ -83,11 +83,18 @@ def batch_collate(batch):
     return result
 
 class ExAbDataset(IterableDataset):
-    def __init__(self, tokenizer, data_path: str, max_length: int = 512) -> None:
+    def __init__(self,
+                 tokenizer: torch.nn.Module,
+                 data_path: str,
+                 src_max_length: int = 1024,
+                 tgt_max_length: int = 256
+    ) -> None:
+        
         super().__init__()
         self.data_path = data_path
-        self.max_length = max_length
         self.tokenizer = tokenizer
+        self.src_max_length = src_max_length
+        self.tgt_max_length = tgt_max_length
         self.sep_token = self.tokenizer.sep_token
         self.sep_token_id = self.tokenizer.sep_token_id
         self.cls_token = self.tokenizer.cls_token
@@ -104,10 +111,10 @@ class ExAbDataset(IterableDataset):
     def tokenize(self, src: List[List[str]], tgt: str, label: List[int]):
         
         tgt_ = tgt.replace('<q>', ' ')
-        tgt_inputs = self.tokenizer(tgt_, truncation=True, max_length=self.max_length)
+        tgt_inputs = self.tokenizer(tgt_, truncation=True, max_length=self.tgt_max_length)
         
         src: str = f' {self.sep_token} {self.cls_token} '.join([' '.join(e) for e in src])
-        src_inputs = self.tokenizer(src, truncation=True, max_length=self.max_length)
+        src_inputs = self.tokenizer(src, truncation=True, max_length=self.src_max_length)
         input_ids = src_inputs['input_ids']
         if input_ids[-2] == self.sep_token_id:
             # case: xxxx [SEP] [SEP]
@@ -150,11 +157,12 @@ class ExAbDataset(IterableDataset):
             }
             
             
-def dataset(tokenizer,
+def dataset(tokenizer: torch.nn.Module,
             data_path: str,
-            max_len: int = 512,
+            src_max_length: int = 1024,
+            tgt_max_length: int = 256,
             batch_size: int = 4):
 
-    tensors = ExAbDataset(tokenizer=tokenizer, data_path=data_path, max_length=max_len)
+    tensors = ExAbDataset(tokenizer=tokenizer, data_path=data_path, src_max_length=src_max_length, tgt_max_length=tgt_max_length)
     iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate)
     return iterator

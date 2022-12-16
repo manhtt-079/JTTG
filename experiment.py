@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from loguru import logger
+import argparse
+import torch
 from config.config import Config
-# from main import Trainer
+from main import Trainer
 @dataclass
 class Experiment:
     dataset: str
@@ -44,13 +46,35 @@ class Worker(object):
     def __init__(self, config_file: str) -> None:
         self.config_file = config_file
         self.experiments = []
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    def run(self):
-        logger.info('Starting experiment')
+    # def run(self):
+    #     logger.info('Starting experiment')
         
-        for k, v in self.EXPERIMENT_ARCHIVE_MAP.items():
-            logger.info(f'Task: {k}, args: {str(v)}')
-            conf = Config(config_file=self.config_file, **v)
-            self.experiments.append(conf)
-            logger.info(conf.dataset)
-            logger.info(conf.model)
+    #     for k, v in self.EXPERIMENT_ARCHIVE_MAP.items():
+    #         logger.info(f'Task: {k}, args: {str(v)}')
+    #         conf = Config(config_file=self.config_file, **v)
+    #         self.experiments.append(conf)
+    #         logger.info(conf.dataset)
+    #         logger.info(conf.model)
+            
+    
+    def run(self, task_name: str):
+        kwargs = self.EXPERIMENT_ARCHIVE_MAP[task_name]
+        conf = Config(config_file=self.config_file, **kwargs)
+        
+        trainer = Trainer(conf=conf, device=self.device)
+        trainer.fit()
+        
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config_file', type=str, default='./config/config.ini', help="Path to the config file")
+    parser.add_argument('--task_name', type=str, default='task2')
+
+
+    args = parser.parse_args()
+    task = Worker(config_file=args.config_file)
+    task.run(task_name=args.task_name)
+
+if __name__=='__main__':
+    main()
