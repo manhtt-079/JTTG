@@ -254,9 +254,10 @@ class VNDSDataPreparation(VIDataPreparation):
         logger.info("Reading raw_data")
         df: pd.DataFrame = pd.read_csv(self.conf.data_path)
 
-        df_train = self.filter_and_clean(df[df.is_train])
-        df_val = self.filter_and_clean(df[df.is_val])
-        df_test = self.filter_and_clean(df[df.is_test])
+        logger.info('Filter and clean data')
+        df_train = self.filter_and_clean(df[df.is_train].copy(deep=True))
+        df_val = self.filter_and_clean(df[df.is_val].copy(deep=True))
+        df_test = self.filter_and_clean(df[df.is_test].copy(deep=True))
         
         logger.info(f"Processing training data")
         self.process_and_save_data(df=df_train, output_dir=self.conf.output_dir, name='train')

@@ -14,7 +14,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='./config/dataset.ini', help="Path to the config file")
     parser.add_argument('--name', type=str, default='reddit_tifu', help="Path to the config file")
-    parser.add_argument('--vi', type=bool, default=False)
 
     args = parser.parse_args()
     if args.name not in PROCESSOR_ARCHIVE_MAP:
