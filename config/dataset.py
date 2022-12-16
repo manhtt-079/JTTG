@@ -57,9 +57,7 @@ class VnDS_DataPreparationConf(DataPreparationConf):
         super().__init__(config_file)
         
         self.sec_name = 'vnds'
-        self.train_path = self.conf[self.sec_name]['train_path']
-        self.val_path = self.conf[self.sec_name]['val_path']
-        self.test_path = self.conf[self.sec_name]['test_path']
+        self.data_path = self.conf[self.sec_name]['data_path']
         self.output_dir = self.conf[self.sec_name]['output_dir']
         self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
 

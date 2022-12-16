@@ -3,6 +3,7 @@ import nltk
 import numpy as np
 from tqdm import tqdm
 import json
+import unicodedata
 import os
 import pandas as pd
 from time import time
@@ -22,9 +23,6 @@ except:
     nltk.download('punkt', quiet=True)
 
 scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-SAVE_DIR = "./vncorenlp/"
-REMAP = {"-lrb-": "(", "-rrb-": ")", "-lcb-": "{", "-rcb-": "}",
-         "-lsb-": "[", "-rsb-": "]", "``": '"', "''": '"', '\xa0': ""}
 
 class DataPreparationBase(ABC):
     def __init__(self, conf: DataPreparationConf) -> None:
@@ -101,7 +99,7 @@ class DataPreparationBase(ABC):
         file_path = os.path.join(output_dir, file_name)
     
         sources = df[self.conf.src_col_name]
-        targets = [d.lower() for d in df[self.conf.tgt_col_name]]
+        targets = [d for d in df[self.conf.tgt_col_name]]
         sources_tokenized = self.tokenize(docs=sources, name='source')
         del sources
     
@@ -155,6 +153,11 @@ class DataPreparationBase(ABC):
                 save_file.write(json.dumps(json_to_save))
 
 class VIDataPreparation(DataPreparationBase):
+    VI_RE_MAP: Dict[str, str] = {"òa": "oà", "Òa": "Oà", "ÒA": "OÀ", "óa": "oá", "Óa": "Oá", "ÓA": "OÁ", "ỏa": "oả", "Ỏa": "Oả", "ỎA": "OẢ", 
+                 "õa": "oã", "Õa": "Oã", "ÕA": "OÃ", "ọa": "oạ", "Ọa": "Oạ", "ỌA": "OẠ", "òe": "oè", "Òe": "Oè", "ÒE": "OÈ",
+                 "óe": "oé", "Óe": "Oé", "ÓE": "OÉ", "ỏe": "oẻ", "Ỏe": "Oẻ", "ỎE": "OẺ", "õe": "oẽ", "Õe": "Oẽ", "ÕE": "OẼ", 
+                 "ọe": "oẹ", "Ọe": "Oẹ", "ỌE": "OẸ", "ùy": "uỳ", "Ùy": "Uỳ", "ÙY": "UỲ", "úy": "uý", "Úy": "Uý", "ÚY": "UÝ", 
+                 "ủy": "uỷ", "Ủy": "Uỷ", "ỦY": "UỶ", "ũy": "uỹ", "Ũy": "Uỹ", "ŨY": "UỸ", "ụy": "uỵ", "Ụy": "Uỵ", "ỤY": "UỴ"}
     
     def __init__(self, conf: DataPreparationConf) -> None:
         super().__init__(conf)
@@ -164,8 +167,11 @@ class VIDataPreparation(DataPreparationBase):
         raise NotImplementedError()
         
     def clean_text(self, text: str) -> str:
-        text = re.sub(r"\s{1,}", '', text)
-        return text.strip().lower()
+        text = unicodedata.normalize('NFKC', text)
+        text = re.sub(pattern='|'.join(self.VI_RE_MAP.keys()), repl=lambda m: self.VI_RE_MAP.get(m.group()), string=text)
+        text = re.sub(r"\s{1,}", ' ', text)
+        
+        return text.strip()
     
     def sent_tokenize(self, doc: str) -> List[str]:
         return underthesea.sent_tokenize(doc)
@@ -182,6 +188,9 @@ class VIDataPreparation(DataPreparationBase):
         return tokenized
 
 class ENDataPreparation(DataPreparationBase):
+    EN_RE_MAP: Dict[str, str] = {"-lrb-": "(", "-rrb-": ")", "-lcb-": "{", "-rcb-": "}",
+                                "-lsb-": "[", "-rsb-": "]", "``": '"', "''": '"', '\xa0': ""}
+    
     def __init__(self, conf: DataPreparationConf) -> None:
         super().__init__(conf)
     
@@ -190,9 +199,9 @@ class ENDataPreparation(DataPreparationBase):
         raise NotImplementedError()
     
     def clean_text(self, text: str) -> str:
-        text = re.sub('|'.join(list(REMAP.keys())), lambda m: REMAP.get(m.group()), text)
+        text = re.sub('|'.join(list(self.EN_RE_MAP.keys())), lambda m: self.EN_RE_MAP.get(m.group()), text)
         text = re.sub(r'\s{1,}', ' ', text)
-        return text.strip().lower()
+        return text.strip()
     
     def sent_tokenize(self, doc: str) -> List[str]:
         return nltk.tokenize.sent_tokenize(text=doc)
@@ -208,7 +217,7 @@ class ENDataPreparation(DataPreparationBase):
         """
         tokenized: List[List[str]] = []
         for doc in tqdm(docs, desc=f'({name}) segment to sentences', ncols=100, nrows=5, total=len(docs)):
-            doc_tokenized = self.sent_tokenize(doc.lower())
+            doc_tokenized = self.sent_tokenize(doc)
             tokenized.append(doc_tokenized)
 
         tokenized: List[List[List[str]]] = ([[token for token in nltk.tokenize.word_tokenize(sentence)] for sentence in doc] for doc in tqdm(
@@ -237,29 +246,17 @@ class VNDSDataPreparation(VIDataPreparation):
         
         return df
     
-    def read_tsv(self, file_path: str) -> pd.DataFrame:
-        sources, targets = [], []
-        with open(file=file_path, mode='r', encoding='utf-8') as f:
-            for line in f:
-                line = line.split(sep='\t')
-                sources.append(line[0].strip())
-                targets.append(line[1].strip())
-        
-        return pd.DataFrame(zip(sources, targets), columns=[self.conf.src_col_name, self.conf.tgt_col_name])
-    
     def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
         logger.info(f"Processing {name} data with no. samples: {len(df)}")
         self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
     
     def build_data(self):
         logger.info("Reading raw_data")
-        df_train = self.read_tsv(self.conf.train_path)
-        df_val = self.read_tsv(self.conf.val_path)
-        df_test = self.read_tsv(self.conf.test_path)
-        
-        df_train = self.filter_and_clean(df_train)
-        df_val = self.filter_and_clean(df_val)
-        df_test = self.filter_and_clean(df_test)
+        df: pd.DataFrame = pd.read_csv(self.conf.data_path)
+
+        df_train = self.filter_and_clean(df[df.is_train])
+        df_val = self.filter_and_clean(df[df.is_val])
+        df_test = self.filter_and_clean(df[df.is_test])
         
         logger.info(f"Processing training data")
         self.process_and_save_data(df=df_train, output_dir=self.conf.output_dir, name='train')
