@@ -66,6 +66,13 @@ class Worker(object):
         trainer = Trainer(conf=conf, device=self.device)
         trainer.fit()
         
+    def return_trainer(self, task_name: str):
+        kwargs = self.EXPERIMENT_ARCHIVE_MAP[task_name]
+        conf = Config(config_file=self.config_file, **kwargs)
+        
+        trainer = Trainer(conf=conf, device=self.device)
+        return trainer
+        
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help="Path to the config file")

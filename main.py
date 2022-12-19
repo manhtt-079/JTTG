@@ -5,6 +5,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 import transformers
+import nltk
+import evaluate
+from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple
 from loguru import logger
@@ -13,7 +16,7 @@ from modules.datasets.dataset import dataset
 from modules.model.utils import AutomaticWeightedLoss, EarlyStopping
 from modules.model.exa_model import ExAb
 
-from modules.utils import set_seed, compute_metrics
+from modules.utils import set_seed
 from config.config import Config
 
 
@@ -106,15 +109,19 @@ class Trainer:
         elif criterion == "BCEWithLogitsLoss":
             return nn.BCEWithLogitsLoss()
 
-    def create_optimizer(self):
+    def create_optimizer(self) -> torch.optim.Optimizer:
         
-        freeze_layers = [f'{e}.layers.{str(idx)}' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
+        freeze_layers = []
+        if 'bart' in self.conf.model.name:
+            freeze_layers = [f'{e}.layers.{str(idx)}.' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
+        elif 't5' in self.conf.model.name:
+            freeze_layers = [f'{e}.block.{str(idx)}.layer' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
+        
         for name, param in self.model.named_parameters():
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
 
-        param_optimizer = [[name, param] for name,
-                        param in self.model.named_parameters() if param.requires_grad]
+        param_optimizer = [[name, param] for name, param in self.model.named_parameters() if param.requires_grad]
         optimizer_grouped_parameters = [
             {'params': [param for name, param in param_optimizer if not any(nd in name for nd in self.no_decay)],
             'weight_decay': self.weight_decay},
@@ -175,8 +182,8 @@ class Trainer:
         with torch.no_grad():
         
             running_loss: float = 0.0
-            preds = []
-            labels = []
+            # preds = []
+            # labels = []
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -194,13 +201,12 @@ class Trainer:
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
-                preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
-                labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
+                # preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
+                # labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
 
-            rouge_score = compute_metrics(predictions=preds, labels=labels, tokenizer=self.tokenizer)
             loss: float = running_loss/(len(dataloader))
 
-        return loss, rouge_score
+        return loss
 
     def train(self):
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
@@ -227,9 +233,8 @@ class Trainer:
                 print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
                 print("Evaluating...")
-                val_loss, rouge_score = self.validate(dataloader=self.val_dataloader)
+                val_loss = self.validate(dataloader=self.val_dataloader)
                 print("     Val loss: {}\n".format(val_loss))
-                print("     Rouge: {}\n".format(rouge_score))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -238,7 +243,7 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser.set('checkpoint', self.best_checkpoint, ckp_path)
+                    self.config_parser.set(self.conf.trainer.sec_name, self.best_checkpoint, ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -248,24 +253,45 @@ class Trainer:
         train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
+
+    def compute_rouge_score(self, dataloader):
+        predictions = []
+        references = []
+        for _, batch in enumerate(tqdm(dataloader)):
+            outputs = self.model.model.generate(
+                input_ids=batch['src_ids'].to('cuda'),
+                max_length=self.conf.dataset.tgt_max_length,
+                attention_mask=batch['src_mask'].to('cuda'),
+                num_beams=self.conf.trainer.num_beams
+            )
+            outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
+            # Replace -100 in the labels as we can't decode them
+            labels = np.where(batch['tgt_ids'][:, 1:] != -100, batch['tgt_ids'][:, 1:], self.tokenizer.pad_token_id)
+            actuals = [self.tokenizer.decode(lb, clean_up_tokenization_spaces=False, skip_special_tokens=True) for lb in labels]
+            
+            predictions.extend(outputs)
+            references.extend(actuals)
+
+        metrics = evaluate.load('rouge')
+        results = metrics.compute(predictions=predictions, references=references)
+        
+        return results
+        
     def test(self):
         del self.train_dataloader
         del self.val_dataloader
         self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path)
         logger.info("Testing...")
-        loss, rouge_score = self.validate(dataloader=self.test_dataloader)
-        logger.info("     Test loss: {}\n".format(loss))
-        logger.info("     Rouge: {}\n".format(rouge_score))
-
-        return loss
+        rouge_score = self.compute_rouge_score(dataloader=self.test_dataloader)
+        logger.info("     Rouge_score: {}\n".format(rouge_score))
 
     def fit(self):
         logger.info("Start training...")
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config_parser['checkpoint'][self.best_checkpoint]}...")
-        current_epoch = self.load_model(path=self.config_parser['checkpoint'][self.best_checkpoint])
+        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint]}...")
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -287,6 +313,7 @@ class Trainer:
             "current_epoch": current_epoch
         }, path)
 
+    # don't use anymore
     def resume(self):
         current_epoch = self.load_model(path=self.config_parser['trainer']['resume']['path'])
         logger.info(f"Continuing training model from epoch {current_epoch}...")

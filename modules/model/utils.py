@@ -72,6 +72,40 @@ class Pooling(nn.Module):
         return output_vector, output_mask
 
 
+class ExAbClassifierHead(nn.Module):
+    def __init__(self,
+                 input_dim: int,
+                 inner_dim: int,
+                 num_classes: int,
+                 pooler_dropout: float
+        ) -> None:
+        super(ExAbClassifierHead, self).__init__()
+        
+        self.ln = nn.Linear(in_features=input_dim, out_features=inner_dim)
+        self.gelu = nn.GELU()
+        self.dropout = nn.Dropout(p=pooler_dropout)
+        self.out_proj = nn.Linear(in_features=inner_dim, out_features=num_classes)
+        
+    def forward(self, hidden_states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.ln(self.dropout(hidden_states))
+        hidden_states = self.gelu(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        
+        outputs = self.out_proj(hidden_states).squeeze(-1)
+        outputs = outputs * mask.float()
+        outputs[outputs==0] = -9e-3
+        
+        return torch.sigmoid(outputs)
+
+class ExAbGenerationHead(nn.Module):
+    def __init__(self, input_dim: int, vocab_size: int) -> None:
+        super(ExAbGenerationHead, self).__init__()
+        
+        self.ln = nn.Linear(in_features=input_dim, out_features=vocab_size)
+        
+    def forward(self, hidden_states: torch.Tensor):
+        return self.ln(hidden_states)
+
 class AutomaticWeightedLoss(nn.Module):
     def __init__(self, n_losses: int):
         super(AutomaticWeightedLoss, self).__init__()

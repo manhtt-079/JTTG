@@ -85,6 +85,7 @@ class TrainerBase(object):
         self.patience = int(self.config['trainer-base']['patience'])
         self.warmup_prop = float(self.config['trainer-base']['warmup_prop'])
         self.weight_decay = float(self.config['trainer-base']['weight_decay'])
+        self.num_beams = int(self.config['trainer-base']['num_beams'])
     
     def __repr__(self) -> str:
         return str(self.__dict__)
