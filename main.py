@@ -47,7 +47,7 @@ class Trainer:
         self.eval_steps = self.conf.trainer.eval_steps
 
         logger.info("Get dataloader")
-        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path)
+        self.train_dataloader = self.get_dataloader(data_path=self.conf.dataset.train_path, shuffle=True)
         self.val_dataloader = self.get_dataloader(data_path=self.conf.dataset.valid_path)
         self.test_dataloader = None
 
@@ -80,10 +80,11 @@ class Trainer:
         
         return True
     
-    def get_dataloader(self, data_path: str):
+    def get_dataloader(self, data_path: str, shuffle: bool = False):
         
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
+                       shuffle=shuffle,
                        src_max_length=self.conf.dataset.src_max_length,
                        tgt_max_length=self.conf.dataset.tgt_max_length,
                        batch_size=self.conf.dataset.batch_size)

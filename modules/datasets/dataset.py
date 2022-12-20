@@ -4,7 +4,7 @@ import math
 import torch
 
 from typing import List, Any, Dict
-from torch.utils.data import IterableDataset, DataLoader
+from torch.utils.data import Dataset, DataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,6 @@ def batch_collate(batch):
             result['src_mask'] = attention_mask
             continue
         
-        if key in ('src', 'tgt'):
-            result[key] = feature_list
-            continue
         if key in ('label', 'src_token_type_ids'):
             feature_list = pad(feature_list, 0)
         feature_list = torch.tensor(feature_list)
@@ -82,7 +79,7 @@ def batch_collate(batch):
     
     return result
 
-class ExAbDataset(IterableDataset):
+class ExAbDataset(Dataset):
     def __init__(self,
                  tokenizer: torch.nn.Module,
                  data_path: str,
@@ -138,31 +135,27 @@ class ExAbDataset(IterableDataset):
 
         label = label[:len(sent_rep_ids)]
 
-        return src_inputs['input_ids'], segment_ids, tgt_inputs['input_ids'], label, sent_rep_ids, src, tgt    
+        return src_inputs['input_ids'], segment_ids, tgt_inputs['input_ids'], label, sent_rep_ids   
         
     def __len__(self):
         return len(self.data)
 
-    def __iter__(self):
-        for e in self.data:
-            src_ids, src_token_type_ids, tgt_ids, label, sent_rep_ids, src, tgt = self.tokenize(e['src'], e['tgt'], e['label'])
-            yield {
-                "src_ids": src_ids,
-                "src_token_type_ids": src_token_type_ids,
-                "tgt_ids": tgt_ids,
-                "label": label,
-                "sent_rep_ids": sent_rep_ids,
-                "src": src,
-                "tgt": tgt
+    def __getitem__(self):
+        for row in self.data:
+            src_ids, src_token_type_ids, tgt_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
+            return {
+                "src_ids": src_ids, "src_token_type_ids": src_token_type_ids,
+                "tgt_ids": tgt_ids, "label": label,
+                "sent_rep_ids": sent_rep_ids
             }
-            
             
 def dataset(tokenizer: torch.nn.Module,
             data_path: str,
+            shuffle: bool = True,
             src_max_length: int = 1024,
             tgt_max_length: int = 256,
             batch_size: int = 4):
 
     tensors = ExAbDataset(tokenizer=tokenizer, data_path=data_path, src_max_length=src_max_length, tgt_max_length=tgt_max_length)
-    iterator = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate)
-    return iterator
+    dataloader = DataLoader(tensors, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle)
+    return dataloader
