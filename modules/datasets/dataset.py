@@ -140,14 +140,14 @@ class ExAbDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self):
-        for row in self.data:
-            src_ids, src_token_type_ids, tgt_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
-            return {
-                "src_ids": src_ids, "src_token_type_ids": src_token_type_ids,
-                "tgt_ids": tgt_ids, "label": label,
-                "sent_rep_ids": sent_rep_ids
-            }
+    def __getitem__(self, idx: int):
+        row = self.data[idx]
+        src_ids, src_token_type_ids, tgt_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
+        return {
+            "src_ids": src_ids, "src_token_type_ids": src_token_type_ids,
+            "tgt_ids": tgt_ids, "label": label,
+            "sent_rep_ids": sent_rep_ids
+        }
             
 def dataset(tokenizer: torch.nn.Module,
             data_path: str,
