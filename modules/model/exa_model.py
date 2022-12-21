@@ -32,7 +32,10 @@ class ExAb(nn.Module):
                 sent_rep_mask: torch.Tensor):
 
         # batch_size, seq_len, embed_dim
-        word_vectors = self.model.model.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
+        if 'bart' in self.conf.pre_trained_name:
+            word_vectors = self.model.model.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
+        else:
+            word_vectors = self.model.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
 
         # (batch_size, seq_len, vocab_size)
         lm_logits = self.model(input_ids=input_ids,

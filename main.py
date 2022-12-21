@@ -34,6 +34,8 @@ class Trainer:
         
         logger.info(f"Loading {self.conf.model.pre_trained_name} tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.conf.model.pre_trained_name)
+        if 't5' in self.conf.model.pre_trained_name:
+            self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
 
         self.accumulation_steps = self.conf.trainer.accumulation_steps
         self.epochs = self.conf.trainer.epochs
@@ -244,7 +246,7 @@ class Trainer:
                 if early_stopping.is_save:
                     ckp_path: str = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser.set(self.conf.trainer.sec_name, self.best_checkpoint, ckp_path)
+                    self.config_parser.set(self.conf.trainer.sec_name, 'best_checkpoint', ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
