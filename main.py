@@ -36,6 +36,7 @@ class Trainer:
         self.tokenizer = AutoTokenizer.from_pretrained(self.conf.model.pre_trained_name)
         if 't5' in self.conf.model.pre_trained_name:
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
+            self.model.resize_token_embeddings(len(self.tokenizer))
 
         self.accumulation_steps = self.conf.trainer.accumulation_steps
         self.epochs = self.conf.trainer.epochs
