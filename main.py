@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 import transformers
-import nltk
 import evaluate
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
@@ -186,8 +185,7 @@ class Trainer:
         with torch.no_grad():
         
             running_loss: float = 0.0
-            # preds = []
-            # labels = []
+            ab_running_loss: float = 0.0
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -205,12 +203,11 @@ class Trainer:
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
-                # preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
-                # labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
+                ab_running_loss += ab_loss.item()
 
             loss: float = running_loss/(len(dataloader))
-
-        return loss
+            ab_loss: float = ab_running_loss/len(dataloader)
+        return loss, ab_loss
 
     def train(self):
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
@@ -231,14 +228,15 @@ class Trainer:
                     self.scheduler.step()
                     self.optimizer.zero_grad()
                 if (idx+1) % self.eval_steps == 0 or idx == 0:
-                    print("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
+                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
-                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                print("Evaluating...")
-                val_loss = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {}\n".format(val_loss))
+                logger.info("Evaluating")
+                val_loss, ab_val_loss = self.validate(dataloader=self.val_dataloader)
+                logger.info("     Val loss: {}".format(val_loss))
+                logger.info("     Abstractive val_loss: {}\n".format(ab_val_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -318,12 +316,12 @@ class Trainer:
         }, path)
 
     # don't use anymore
-    def resume(self):
-        current_epoch = self.load_model(path=self.config_parser['trainer']['resume']['path'])
-        logger.info(f"Continuing training model from epoch {current_epoch}...")
+    def resume(self, epochs_to_resume: int):
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['best_checkpoint'])
+        logger.info(f"Resume training model from epoch {current_epoch}...")
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
         train_losses, val_losses = [], []
-        for epoch in range(current_epoch, current_epoch + self.config_parser['trainer']['resume']['epochs']):
+        for epoch in range(current_epoch, current_epoch + epochs_to_resume):
             start = time.time()
             self.model.train()
 
@@ -338,24 +336,24 @@ class Trainer:
                     self.scheduler.step()
                     self.optimizer.zero_grad()
                 if idx+1 % self.eval_steps == 0 or idx == 0:
-                    print("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
+                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
-                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
-
-                print("Evaluating...")
-                val_loss, acc, f1, auc = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
+                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                
+                logger.info("Evaluating")
+                val_loss, ab_val_loss = self.validate(dataloader=self.val_dataloader)
+                logger.info("     Val loss: {}".format(val_loss))
+                logger.info("     Abstractive val_loss: {}\n".format(ab_val_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
-
 
                 early_stopping(val_loss=val_loss)
                 if early_stopping.is_save:
                     ckp_path = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser['storage']['resume_best_checkpoint'] = ckp_path
+                    self.config_parser.set(self.conf.trainer.sec_name, 'resume_best_checkpoint', ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -363,12 +361,12 @@ class Trainer:
                     break
 
             logger.info(f"Total time per epoch: {time.time()-start} seconds")
-        train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
+        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'resume_loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
-        logger.info("Start testing resume...")
-        logger.info(f"Loading the best model from {self.config_parser['storage']['resume_best_checkpoint']}...")
-        current_epoch = self.load_model(path=self.config_parser['storage']['resume_best_checkpoint'])
+        logger.info("Start testing...")
+        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
