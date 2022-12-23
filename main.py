@@ -254,7 +254,7 @@ class Trainer:
                     logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
                     break
             logger.info(f"Total time per epoch: {time.time()-start} seconds")
-        train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
+        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
 
@@ -294,8 +294,8 @@ class Trainer:
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint]}...")
-        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint])
+        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name]['best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -384,9 +384,14 @@ def str2bool(s: str):
         return argparse.ArgumentTypeError("Boolen values are expected!")
 
 
-def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2,3'):
+def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2'):
     transformers.logging.set_verbosity_error()
     torch.cuda.set_device(idx)
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+
+def set_multi_gpu(cuda_visible_devices: str = '0,1,2,3'):
+    transformers.logging.set_verbosity_error()
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
@@ -397,24 +402,26 @@ def main():
     parser.add_argument('--model_name', type=str, default='bart-sum', help="Path to the config file")
     parser.add_argument('--is_long', type=str2bool, const=True, nargs="?", default=False)
     parser.add_argument('--use_us_test', type=str2bool, const=True, nargs="?", default=False)
-    parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
-    parser.add_argument('--gpu_idx', type=int, default=3, help="Path to the config file")
+    # parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
+    parser.add_argument('--gpu_idx', type=int, default=1, help="Path to the config file")
 
 
     args = parser.parse_args()
     set_seed()
+    # set_multi_gpu()
     set_gpu(idx=args.gpu_idx)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     config = Config(config_file=args.config_file, dataset_name=args.dataset_name, model_name=args.model_name, is_long=args.is_long, use_us_test=args.use_us_test)
     
     logger.info("Initializing trainer...")
     trainer = Trainer(conf=config ,device=device)
+    
+    trainer.fit()
 
-    if not args.resume:
-        trainer.fit()
-    else:
-        trainer.resume()
+    # if not args.resume:
+    #     trainer.fit()
+    # else:
+    #     trainer.resume()
 
 if __name__=='__main__':
     main()
