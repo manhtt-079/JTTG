@@ -47,7 +47,7 @@ class Worker(object):
         self.config_file = config_file
         self.experiments = []
         
-        set_gpu(0)
+        set_gpu(1)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     def run(self, task_name: str):

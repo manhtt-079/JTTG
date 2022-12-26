@@ -19,11 +19,11 @@ from modules.utils import set_seed
 from config.config import Config
 
 
-class Trainer:
-    __slots__ = ['config_file', 'conf', 'config_parser', 'device', 'model', 'tokenizer', 'accumulation_steps', 'epochs',
-                 'log', 'log_loss', 'lr', 'num_freeze_layers', 'weight_decay', 'no_decay', 'patience', 'delta', 'eval_steps', 
-                 'train_dataloader', 'val_dataloader', 'test_dataloader', 'num_training_steps', 'num_warmup_steps', 'ex_criterion', 
-                 'ab_criterion', 'auto_weighted_loss', 'optimizer', 'scheduler', 'checkpoint', 'best_checkpoint']
+class Trainer(object):
+    # __slots__ = ['config_file', 'conf', 'config_parser', 'device', 'model', 'tokenizer', 'accumulation_steps', 'epochs',
+    #              'log', 'log_loss', 'lr', 'num_freeze_layers', 'weight_decay', 'no_decay', 'patience', 'delta', 'eval_steps', 
+    #              'train_dataloader', 'val_dataloader', 'test_dataloader', 'num_training_steps', 'num_warmup_steps', 'ex_criterion', 
+    #              'ab_criterion', 'auto_weighted_loss', 'optimizer', 'scheduler', 'checkpoint', 'best_checkpoint']
     def __init__(self, conf: Config, device: torch.device):
         
         self.config_file = conf.config_file

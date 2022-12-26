@@ -37,11 +37,11 @@ def batch_collate(batch):
             sent_rep_mask = ~(sent_rep_token_ids == -1)
             sent_rep_token_ids[sent_rep_mask == -1] = 0
             
-            result['sent_rep_token_ids'] = sent_rep_token_ids
+            result['sent_rep_ids'] = sent_rep_token_ids
             result['sent_rep_mask'] = sent_rep_mask
             continue
         
-        if key == 'tgt_ids':
+        if key == 'decoder_input_ids':
             tgt_ids = feature_list
             
             attention_mask = [[1] * len(ids) for ids in tgt_ids]
@@ -53,11 +53,11 @@ def batch_collate(batch):
             attention_mask = pad(attention_mask, 0)
             attention_mask = torch.tensor(attention_mask)
             
-            result['tgt_ids'] = tgt_ids
-            result['tgt_mask'] = attention_mask
+            result['decoder_input_ids'] = tgt_ids
+            result['decoder_attention_mask'] = attention_mask
             continue
         
-        if key == 'src_ids':
+        if key == 'input_ids':
             input_ids = feature_list
             
             attention_mask = [[1] * len(ids) for ids in input_ids]
@@ -69,8 +69,8 @@ def batch_collate(batch):
             attention_mask = pad(attention_mask, 0)
             attention_mask = torch.tensor(attention_mask)
             
-            result['src_ids'] = input_ids
-            result['src_mask'] = attention_mask
+            result['input_ids'] = input_ids
+            result['attention_mask'] = attention_mask
             continue
         
         if key in ('label', 'src_token_type_ids'):
@@ -79,6 +79,7 @@ def batch_collate(batch):
         result[key] = feature_list
     
     return result
+
 
 class ExAbDataset(Dataset):
     def __init__(self,
@@ -97,6 +98,10 @@ class ExAbDataset(Dataset):
         self.sep_token_id = self.tokenizer.sep_token_id
         self.cls_token = self.tokenizer.cls_token
         self.cls_token_id = self.tokenizer.cls_token_id
+        self.prefix = ''
+        # add prefix if model architecture based on t5
+        if 't5' in tokenizer.name_or_path:
+            self.prefix = 'summarize: '
         
         self.data = self.load_json()
         
@@ -111,7 +116,7 @@ class ExAbDataset(Dataset):
         tgt_ = tgt.replace('<q>', ' ')
         tgt_inputs = self.tokenizer(tgt_, truncation=True, max_length=self.tgt_max_length)
         
-        src: str = f' {self.sep_token} {self.cls_token} '.join([' '.join(e) for e in src])
+        src: str = self.prefix + f' {self.sep_token} {self.cls_token} '.join([' '.join(e) for e in src])
         src_inputs = self.tokenizer(src, truncation=True, max_length=self.src_max_length)
         input_ids = src_inputs['input_ids']
         if input_ids[-2] == self.sep_token_id:
@@ -125,29 +130,29 @@ class ExAbDataset(Dataset):
         src_inputs['attention_mask'] = src_inputs['attention_mask'][:len(src_inputs['input_ids'])]
         
         sent_rep_ids = [-1] + [i for i, idx in enumerate(src_inputs['input_ids']) if idx==self.sep_token_id]
-        segs = [sent_rep_ids[i] - sent_rep_ids[i-1] for i in range(1, len(sent_rep_ids))]
         sent_rep_ids = sent_rep_ids[1:]
-        segment_ids = []
-        for i, s in enumerate(segs):
-            if (i % 2 == 0):
-                segment_ids += s*[0]
-            else:
-                segment_ids += s*[1]
+        # segs = [sent_rep_ids[i] - sent_rep_ids[i-1] for i in range(1, len(sent_rep_ids))]
+        # segment_ids = []
+        # for i, s in enumerate(segs):
+        #     if (i % 2 == 0):
+        #         segment_ids += s*[0]
+        #     else:
+        #         segment_ids += s*[1]
 
         label = label[:len(sent_rep_ids)]
 
-        return src_inputs['input_ids'], segment_ids, tgt_inputs['input_ids'], label, sent_rep_ids   
+        return src_inputs['input_ids'], tgt_inputs['input_ids'], label, sent_rep_ids   
         
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx: int):
         row = self.data[idx]
-        src_ids, src_token_type_ids, tgt_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
+        input_ids, decoder_input_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
+        
         return {
-            "src_ids": src_ids, "src_token_type_ids": src_token_type_ids,
-            "tgt_ids": tgt_ids, "label": label,
-            "sent_rep_ids": sent_rep_ids
+            "input_ids": input_ids, "decoder_input_ids": decoder_input_ids,
+            "sent_rep_ids": sent_rep_ids, "label": label
         }
         
 class IterableExAbDataset(IterableDataset):
@@ -231,6 +236,4 @@ def dataset(tokenizer: torch.nn.Module,
             batch_size: int = 4):
 
     dataset = ExAbDataset(tokenizer=tokenizer, data_path=data_path, src_max_length=src_max_length, tgt_max_length=tgt_max_length)
-    # if isinstance(dataset, ExAbDataset):
     return DataLoader(dataset, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle)
-    # return DataLoader(dataset, batch_size=batch_size, collate_fn=batch_collate)
