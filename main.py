@@ -5,6 +5,7 @@ import time
 import torch
 import torch.nn as nn
 import numpy as np
+import transformers
 import nltk
 import evaluate
 from tqdm import tqdm
@@ -21,7 +22,11 @@ from modules.utils import set_seed
 from config.config import Config
 
 
-class Trainer:
+class Trainer(object):
+    # __slots__ = ['config_file', 'conf', 'config_parser', 'device', 'model', 'tokenizer', 'accumulation_steps', 'epochs',
+    #              'log', 'log_loss', 'lr', 'num_freeze_layers', 'weight_decay', 'no_decay', 'patience', 'delta', 'eval_steps', 
+    #              'train_dataloader', 'val_dataloader', 'test_dataloader', 'num_training_steps', 'num_warmup_steps', 'ex_criterion', 
+    #              'ab_criterion', 'auto_weighted_loss', 'optimizer', 'scheduler', 'checkpoint', 'best_checkpoint']
     def __init__(self, conf: Config, device: torch.device):
         
         self.config_file = conf.config_file
@@ -42,6 +47,7 @@ class Trainer:
         self.accumulation_steps = self.conf.trainer.accumulation_steps
         self.epochs = self.conf.trainer.epochs
         self.log = self.conf.trainer.log
+        self.log_loss = os.path.join(self.log, 'loss.txt')
         self.lr = self.conf.trainer.lr
         self.num_freeze_layers = self.conf.trainer.num_freeze_layers
         self.weight_decay = self.conf.trainer.weight_decay
@@ -190,6 +196,8 @@ class Trainer:
         with torch.no_grad():
         
             running_loss: float = 0.0
+            # preds = []
+            # labels = []
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -207,13 +215,16 @@ class Trainer:
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
+                # preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
+                # labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
 
             loss: float = running_loss/(len(dataloader))
-
-        return loss
+            ab_loss: float = ab_running_loss/len(dataloader)
+        return loss, ab_loss
 
     def train(self):
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
+        
         train_losses, val_losses = [], []
         for epoch in range(self.epochs):
             start: float = time.time()
@@ -236,9 +247,9 @@ class Trainer:
                 train_loss = running_loss/n_iters
                 logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                logger.info("-----:----- Evaluating -----:-----")
+                print("Evaluating...")
                 val_loss = self.validate(dataloader=self.val_dataloader)
-                logger.info("Val loss: {}\n".format(val_loss))
+                print("     Val loss: {}\n".format(val_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -251,11 +262,9 @@ class Trainer:
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
-                    logger.info("-----:----- Early stopping -----:-----")
+                    logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
                     break
-            logger.info(f"Total time per epoch: {time.time()-start} seconds.\n")
-        
-        logger.info(f"Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
+            logger.info(f"Total time per epoch: {time.time()-start} seconds")
         train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
@@ -301,8 +310,8 @@ class Trainer:
         logger.info(f"Learning rate: {self.lr}")
         logger.info(f"Num freeze layers: {self.num_freeze_layers}")
         self.train()
-        logger.info("-----:----- Finish training. -----:-----\n")
-        logger.info("-----:----- Testing -----:-----")
+        logger.info("Finish training.\n")
+        logger.info("Start testing...")
         logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint]}...")
         current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint])
         logger.info(f"With epoch: {current_epoch}")
@@ -327,12 +336,12 @@ class Trainer:
         }, path)
 
     # don't use anymore
-    def resume(self):
-        current_epoch = self.load_model(path=self.config_parser['trainer']['resume']['path'])
-        logger.info(f"Continuing training model from epoch {current_epoch}...")
+    def resume(self, epochs_to_resume: int):
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['best_checkpoint'])
+        logger.info(f"Resume training model from epoch {current_epoch}...")
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
         train_losses, val_losses = [], []
-        for epoch in range(current_epoch, current_epoch + self.config_parser['trainer']['resume']['epochs']):
+        for epoch in range(current_epoch, current_epoch + epochs_to_resume):
             start = time.time()
             self.model.train()
 
@@ -350,21 +359,20 @@ class Trainer:
                     logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
-                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                logger.info("Evaluating...")
+                print("Evaluating...")
                 val_loss, acc, f1, auc = self.validate(dataloader=self.val_dataloader)
-                logger.info("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
+                print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
-
 
                 early_stopping(val_loss=val_loss)
                 if early_stopping.is_save:
                     ckp_path = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
                     logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser['storage']['resume_best_checkpoint'] = ckp_path
+                    self.config_parser.set(self.conf.trainer.sec_name, 'resume_best_checkpoint', ckp_path)
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
@@ -372,12 +380,12 @@ class Trainer:
                     break
 
             logger.info(f"Total time per epoch: {time.time()-start} seconds")
-        train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
+        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'resume_loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
-        logger.info("Start testing resume...")
-        logger.info(f"Loading the best model from {self.config_parser['storage']['resume_best_checkpoint']}...")
-        current_epoch = self.load_model(path=self.config_parser['storage']['resume_best_checkpoint'])
+        logger.info("Start testing...")
+        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
@@ -393,9 +401,14 @@ def str2bool(s: str):
         return argparse.ArgumentTypeError("Boolen values are expected!")
 
 
-def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2,3'):
+def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2'):
     transformers.logging.set_verbosity_error()
     torch.cuda.set_device(idx)
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+
+def set_multi_gpu(cuda_visible_devices: str = '0,1,2,3'):
+    transformers.logging.set_verbosity_error()
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
@@ -406,24 +419,26 @@ def main():
     parser.add_argument('--model_name', type=str, default='bart-sum', help="Path to the config file")
     parser.add_argument('--is_long', type=str2bool, const=True, nargs="?", default=False)
     parser.add_argument('--use_us_test', type=str2bool, const=True, nargs="?", default=False)
-    parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
-    parser.add_argument('--gpu_idx', type=int, default=3, help="Path to the config file")
+    # parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
+    parser.add_argument('--gpu_idx', type=int, default=1, help="Path to the config file")
 
 
     args = parser.parse_args()
     set_seed()
+    # set_multi_gpu()
     set_gpu(idx=args.gpu_idx)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
     config = Config(config_file=args.config_file, dataset_name=args.dataset_name, model_name=args.model_name, is_long=args.is_long, use_us_test=args.use_us_test)
     
     logger.info("Initializing trainer...")
     trainer = Trainer(conf=config ,device=device)
+    
+    trainer.fit()
 
-    if not args.resume:
-        trainer.fit()
-    else:
-        trainer.resume()
+    # if not args.resume:
+    #     trainer.fit()
+    # else:
+    #     trainer.resume()
 
 if __name__=='__main__':
-    main()
+    pass
