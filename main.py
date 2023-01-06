@@ -1,13 +1,14 @@
 import argparse
+import traceback
 import os
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-import transformers
 import nltk
 import evaluate
 from tqdm import tqdm
+import transformers
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple
 from loguru import logger
@@ -93,10 +94,13 @@ class Trainer:
                        batch_size=self.conf.dataset.batch_size)
     
     def save_config(self):
-        with open(self.config_file, 'w') as f:
-            self.config_parser.write(f)
-            
-        return True
+        """Overwrite the config file"""
+        
+        try:
+            with open(self.config_file, 'w') as f:
+                self.config_parser.write(f)
+        except Exception:
+            traceback.print_exc()
     
     @staticmethod
     def gen_criterion(criterion: str):
@@ -186,8 +190,6 @@ class Trainer:
         with torch.no_grad():
         
             running_loss: float = 0.0
-            # preds = []
-            # labels = []
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -205,8 +207,6 @@ class Trainer:
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
-                # preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
-                # labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
 
             loss: float = running_loss/(len(dataloader))
 
@@ -231,14 +231,14 @@ class Trainer:
                     self.scheduler.step()
                     self.optimizer.zero_grad()
                 if (idx+1) % self.eval_steps == 0 or idx == 0:
-                    print("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
+                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
-                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                print("Evaluating...")
+                logger.info("-----:----- Evaluating -----:-----")
                 val_loss = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {}\n".format(val_loss))
+                logger.info("Val loss: {}\n".format(val_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -251,9 +251,11 @@ class Trainer:
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
-                    logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
+                    logger.info("-----:----- Early stopping -----:-----")
                     break
-            logger.info(f"Total time per epoch: {time.time()-start} seconds")
+            logger.info(f"Total time per epoch: {time.time()-start} seconds.\n")
+        
+        logger.info(f"Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
         train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
@@ -285,20 +287,27 @@ class Trainer:
         del self.train_dataloader
         del self.val_dataloader
         self.test_dataloader = self.get_dataloader(data_path=self.conf.dataset.test_path)
-        logger.info("Testing...")
         rouge_score = self.compute_rouge_score(dataloader=self.test_dataloader)
         logger.info("     Rouge_score: {}\n".format(rouge_score))
 
     def fit(self):
-        logger.info("Start training...")
+        logger.info("-----:----- Training -----:-----")
+        logger.info(f"Epoch: {self.epochs}")
+        logger.info(f"Num training steps: {self.num_training_steps}")
+        logger.info(f"Num warmup steps: {self.num_warmup_steps}")
+        logger.info(f"Accumulation steps: {self.accumulation_steps}")
+        logger.info(f"Eval steps: {self.eval_steps}")
+        logger.info(f"Weight decay: {self.weight_decay}")
+        logger.info(f"Learning rate: {self.lr}")
+        logger.info(f"Num freeze layers: {self.num_freeze_layers}")
         self.train()
-        logger.info("Finish training.\n")
-        logger.info("Start testing...")
+        logger.info("-----:----- Finish training. -----:-----\n")
+        logger.info("-----:----- Testing -----:-----")
         logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint]}...")
         current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
-        logger.info("Finish testing.")
+        logger.info("-----:----- Finish testing. -----:-----")
 
     def load_model(self, path: str):
         ckp = torch.load(path)
@@ -338,14 +347,14 @@ class Trainer:
                     self.scheduler.step()
                     self.optimizer.zero_grad()
                 if idx+1 % self.eval_steps == 0 or idx == 0:
-                    print("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
+                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
             else:
                 train_loss = running_loss/n_iters
-                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                print("Evaluating...")
+                logger.info("Evaluating...")
                 val_loss, acc, f1, auc = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
+                logger.info("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
