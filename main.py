@@ -35,14 +35,14 @@ class Trainer(object):
         self.device = device     
         
         logger.info(f'Initting and loading model_checkpoint: {self.conf.model.pre_trained_name}')
-        self.model: nn.Module = ExAb(conf=self.conf.model)
-        self.model.to(self.device)
+        self.exab: nn.Module = ExAb(conf=self.conf.model)
+        self.exab.to(self.device)
         
         logger.info(f"Loading {self.conf.model.pre_trained_name} tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.conf.model.pre_trained_name)
         if 't5' in self.conf.model.pre_trained_name:
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
-            self.model.model.resize_token_embeddings(len(self.tokenizer))
+            self.exab.model.resize_token_embeddings(len(self.tokenizer))
 
         self.accumulation_steps = self.conf.trainer.accumulation_steps
         self.epochs = self.conf.trainer.epochs
@@ -69,7 +69,7 @@ class Trainer(object):
         
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.conf.trainer.n_losses)
 
-        self.optimizer, self.scheduler = self.create_optimizer_scheduler()
+        self.optimizer, self.scheduler = self.configure_optimizer_scheduler()
         
         self.checkpoint = self.conf.trainer.checkpoint
         self.best_checkpoint = self.conf.trainer.best_checkpoint
@@ -123,19 +123,19 @@ class Trainer(object):
         elif criterion == "BCEWithLogitsLoss":
             return nn.BCEWithLogitsLoss()
 
-    def create_optimizer(self) -> torch.optim.Optimizer:
-        
+    def freeze_layers(self) -> None:
         freeze_layers = []
         if 'bart' in self.conf.model.name:
             freeze_layers = [f'{e}.layers.{str(idx)}.' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
         elif 't5' in self.conf.model.name:
             freeze_layers = [f'{e}.block.{str(idx)}.layer' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
         
-        for name, param in self.model.named_parameters():
+        for name, param in self.exab.model.named_parameters():
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
-
-        param_optimizer = [[name, param] for name, param in self.model.named_parameters() if param.requires_grad]
+                
+    def configure_optimizer(self) -> torch.optim.Optimizer:
+        param_optimizer = [[name, param] for name, param in self.exab.model.named_parameters() if param.requires_grad]
         optimizer_grouped_parameters = [
             {'params': [param for name, param in param_optimizer if not any(nd in name for nd in self.no_decay)],
             'weight_decay': self.weight_decay},
@@ -147,16 +147,16 @@ class Trainer(object):
         
         return optimizer
     
-    def create_scheduler(self, optimizer: torch.optim.Optimizer):
+    def configure_scheduler(self, optimizer: torch.optim.Optimizer):
         scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
                                                                                        num_warmup_steps=self.num_warmup_steps,
                                                                                        num_training_steps=self.num_training_steps)
         
         return scheduler
 
-    def create_optimizer_scheduler(self):
-        optimizer: torch.optim.Optimizer = self.create_optimizer()
-        scheduler: torch.optim.lr_scheduler.LambdaLR = self.create_scheduler(optimizer=optimizer)
+    def configure_optimizer_scheduler(self):
+        optimizer: torch.optim.Optimizer = self.configure_optimizer()
+        scheduler: torch.optim.lr_scheduler.LambdaLR = self.configure_scheduler(optimizer=optimizer)
         
         return optimizer, scheduler
 
@@ -166,7 +166,7 @@ class Trainer(object):
     def step(self, batch: Iterator):
         input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
 
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.model(input_ids=input_ids,
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
                                                                 attention_mask=attention_mask,
                                                                 decoder_input_ids=decoder_input_ids,
                                                                 decoder_attention_mask=decoder_attention_mask,
@@ -192,7 +192,7 @@ class Trainer(object):
         return loss.item()*self.accumulation_steps
 
     def validate(self, dataloader):
-        self.model.eval()
+        self.exab.eval()
         with torch.no_grad():
         
             running_loss: float = 0.0
@@ -200,7 +200,7 @@ class Trainer(object):
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
-                outputs: Tuple[torch.Tensor, torch.Tensor] = self.model(input_ids=input_ids,
+                outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
                                                                         attention_mask=attention_mask,
                                                                         decoder_input_ids=decoder_input_ids,
                                                                         decoder_attention_mask=decoder_attention_mask,
@@ -226,7 +226,7 @@ class Trainer(object):
         train_losses, val_losses = [], []
         for epoch in range(self.epochs):
             start: float = time.time()
-            self.model.train()
+            self.exab.train()
 
             running_loss: float = 0.0
             n_iters = len(self.train_dataloader)
@@ -273,7 +273,7 @@ class Trainer(object):
         predictions = []
         references = []
         for _, batch in enumerate(tqdm(dataloader)):
-            outputs = self.model.model.generate(
+            outputs = self.exab.model.generate(
                 input_ids=batch['input_ids'].to('cuda'),
                 max_length=self.conf.dataset.tgt_max_length,
                 attention_mask=batch['attention_mask'].to('cuda'),
@@ -320,7 +320,7 @@ class Trainer(object):
 
     def load_model(self, path: str):
         ckp = torch.load(path)
-        self.model.load_state_dict(ckp['model_state_dict'])
+        self.exab.load_state_dict(ckp['model_state_dict'])
         self.optimizer.load_state_dict(ckp['optimizer_state_dict'])
         self.scheduler.load_state_dict(ckp['scheduler_state_dict'])
         current_epoch = ckp['current_epoch']
@@ -329,7 +329,7 @@ class Trainer(object):
 
     def save_model(self, current_epoch: int, path: str):
         torch.save({
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": self.exab.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "current_epoch": current_epoch
@@ -343,7 +343,7 @@ class Trainer(object):
         train_losses, val_losses = [], []
         for epoch in range(current_epoch, current_epoch + epochs_to_resume):
             start = time.time()
-            self.model.train()
+            self.exab.train()
 
             running_loss = 0.0
             n_iters = len(self.train_dataloader)
@@ -389,6 +389,7 @@ class Trainer(object):
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("Finish testing.")
+
 
 def str2bool(s: str):
     if isinstance(s, bool):
