@@ -161,7 +161,7 @@ class Trainer(object):
         return optimizer, scheduler
 
     def to_input(self, batch: Iterator):
-        return tuple(t.to(self.device) for t in [batch[k] for k in ['src_ids', 'src_mask', 'tgt_ids', 'tgt_mask', 'sent_rep_token_ids', 'sent_rep_mask', 'label']])
+        return tuple(t.to(self.device) for t in [batch[k] for k in ['input_ids', 'attention_mask', 'decoder_input_ids', 'decoder_attention_mask', 'sent_rep_ids', 'sent_rep_mask', 'label']])
     
     def step(self, batch: Iterator):
         input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -196,8 +196,7 @@ class Trainer(object):
         with torch.no_grad():
         
             running_loss: float = 0.0
-            # preds = []
-            # labels = []
+            ab_running_loss: float = 0.0
             
             for batch in dataloader:
                 input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
@@ -215,8 +214,7 @@ class Trainer(object):
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
-                # preds.extend(decoder_input_ids.detach().clone()[:, 1:].cpu().numpy())
-                # labels.extend(torch.argmax(outputs[1][:, :-1], dim=-1).detach().cpu().numpy())
+                ab_running_loss += ab_loss.item()
 
             loss: float = running_loss/(len(dataloader))
             ab_loss: float = ab_running_loss/len(dataloader)
@@ -247,9 +245,10 @@ class Trainer(object):
                 train_loss = running_loss/n_iters
                 logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
 
-                print("Evaluating...")
-                val_loss = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {}\n".format(val_loss))
+                logger.info("-----:----- Evaluating -----:-----")
+                val_loss, ab_loss = self.validate(dataloader=self.val_dataloader)
+                logger.info("     Val loss: {}\n".format(val_loss))
+                logger.info("     Abtractive loss: {}\n".format(ab_loss))
 
                 train_losses.append(train_losses)
                 val_losses.append(val_losses)
@@ -262,10 +261,11 @@ class Trainer(object):
                     self.save_config()
                     self.save_model(current_epoch=epoch+1, path=ckp_path)
                 if early_stopping.early_stop:
-                    logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
+                    logger.info(f"Early stopping.")
                     break
             logger.info(f"Total time per epoch: {time.time()-start} seconds")
-        train_losses, val_losses = np.array(train_loss).reshape(-1,1), np.array(val_loss).reshape(-1,1)
+        logger.info(f"Saving log loss to: {os.path.join(self.log, 'loss.txt')}")
+        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
         np.savetxt(os.path.join(self.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
 
 
@@ -274,14 +274,14 @@ class Trainer(object):
         references = []
         for _, batch in enumerate(tqdm(dataloader)):
             outputs = self.model.model.generate(
-                input_ids=batch['src_ids'].to('cuda'),
+                input_ids=batch['input_ids'].to('cuda'),
                 max_length=self.conf.dataset.tgt_max_length,
-                attention_mask=batch['src_mask'].to('cuda'),
+                attention_mask=batch['attention_mask'].to('cuda'),
                 num_beams=self.conf.trainer.num_beams
             )
             outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
             # Replace -100 in the labels as we can't decode them
-            labels = np.where(batch['tgt_ids'][:, 1:] != -100, batch['tgt_ids'][:, 1:], self.tokenizer.pad_token_id)
+            labels = np.where(batch['decoder_input_ids'][:, 1:] != -100, batch['decoder_input_ids'][:, 1:], self.tokenizer.pad_token_id)
             actuals = [self.tokenizer.decode(lb, clean_up_tokenization_spaces=False, skip_special_tokens=True) for lb in labels]
             
             predictions.extend(outputs)
@@ -312,8 +312,8 @@ class Trainer(object):
         self.train()
         logger.info("Finish training.\n")
         logger.info("Start testing...")
-        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint]}...")
-        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name][self.best_checkpoint])
+        logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name]['best_checkpoint']}...")
+        current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         self.test()
         logger.info("-----:----- Finish testing. -----:-----")
