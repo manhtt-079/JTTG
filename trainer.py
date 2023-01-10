@@ -39,20 +39,24 @@ class ExAbModel(pl.LightningModule):
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
         
         self.prefix = 'layers' if 'bart' in self.config.model.pre_trained_name else 'block'
-        self.log = self.config.trainer.log
+        self.log_dir = self.config.trainer.log
         self.checkpoint = self.config.trainer.checkpoint
         
         self.exab = ExAb(conf=self.config.model)
-        self.ext_criterion = nn.BCELoss()
+        self.ext_criterion = nn.BCEWithLogitsLoss()
         self.abst_criterion = nn.CrossEntropyLoss()
+        self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.config.trainer.n_losses)
+        
+        self.num_training_steps = len(self.train_dataloader()) * self.config.trainer.epochs
+        self.num_warmup_steps = int(self.config.trainer.warmup_prop * self.num_training_steps)
 
     def make_dir(self, dir_path: str):
         if not os.path.exists(dir_path):
             os.system(f'mkdir -p {dir_path}')
-            os.system(f"chmod -R 777 {self.log}")
+            os.system(f"chmod -R 777 {dir_path}")
     
     def setup(self, stage):
-        self.make_dir(dir_path=self.log)
+        self.make_dir(dir_path=self.log_dir)
         self.make_dir(dir_path=self.checkpoint)
         
         self.freeze_layers()
@@ -62,7 +66,7 @@ class ExAbModel(pl.LightningModule):
     def freeze_layers(self) -> None:
         """Freeze some layers of pre-trained model
         """
-        freeze_layers = [f'{e}.{self.prefix}.{str(idx)}.' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
+        freeze_layers = [f'{e}.{self.prefix}.{str(idx)}.' for idx in range(self.config.trainer.num_freeze_layers) for e in ['encoder', 'decoder']]
         for name, param in self.exab.model.named_parameters():
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
@@ -94,35 +98,35 @@ class ExAbModel(pl.LightningModule):
     def configure_optimizers(self):
         param_optimizer = [[name, param] for name, param in self.exab.model.named_parameters() if param.requires_grad]
         optimizer_grouped_parameters = [
-            {'params': [param for name, param in param_optimizer if not any(nd in name for nd in self.no_decay)],
-             'weight_decay': self.weight_decay},
-            {'params': [param for name, param in param_optimizer if any(nd in name for nd in self.no_decay)],
+            {'params': [param for name, param in param_optimizer if not any(nd in name for nd in self.config.trainer.no_decay)],
+             'weight_decay': self.config.trainer.weight_decay},
+            {'params': [param for name, param in param_optimizer if any(nd in name for nd in self.config.trainer.no_decay)],
              'weight_decay': 0.0}
         ]
 
-        optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.lr)
+        optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.config.trainer.lr)
         scheduler = self.configure_scheduler(optimizer)
 
         return [optimizer], [scheduler]
 
     def compute_loss(self, batch):
-        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = batch
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
-                                                                attention_mask=attention_mask,
-                                                                decoder_input_ids=decoder_input_ids,
-                                                                decoder_attention_mask=decoder_attention_mask,
-                                                                sent_rep_ids=sent_rep_ids,
-                                                                sent_rep_mask=sent_rep_mask)
+        label = batch['label']
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=batch['input_ids'],
+                                                                attention_mask=batch['attention_mask'],
+                                                                decoder_input_ids=batch['decoder_input_ids'],
+                                                                decoder_attention_mask=batch['decoder_attention_mask'],
+                                                                sent_rep_ids=batch['sent_rep_ids'],
+                                                                sent_rep_mask=batch['sent_rep_mask'])
         ext_loss = self.ext_criterion(outputs[0], label.float())
 
-        abst_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+        abst_label = batch['decoder_input_ids'].detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         abst_loss = self.abst_criterion(logits, abst_label)
         
         loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abst_loss)
 
         return (loss, abst_loss)
-    
+   
     def training_step(self, batch, batch_idx):
         loss: torch.Tensor = self.compute_loss(batch=batch)[0]
         
@@ -132,7 +136,8 @@ class ExAbModel(pl.LightningModule):
         loss, abst_loss = self.compute_loss(batch=batch)
         
         d = {'val_loss': loss, 'abst_loss': abst_loss}
-        self.log_dict(d, prog_bar=True)        
+        print(self.log)
+        self.log('val_loss', loss)        
         return d
     
     def validation_epoch_end(self, validation_step_outputs):
@@ -195,7 +200,7 @@ def main(task_name: str, config_file: str):
     kwargs = EXPERIMENT_MAP[task_name]
     config = Config(config_file=config_file, **kwargs)
     seed_everything(42)
-    wandb_logger = WandbLogger(project=task_name)
+    wandb_logger = WandbLogger(project=task_name, save_dir=config.trainer.log)
     early_stopping = EarlyStopping(monitor='val_loss',
                                    mode='min',
                                    min_delta=config.trainer.delta,
