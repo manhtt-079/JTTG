@@ -56,7 +56,16 @@ class ExAbModel(pl.LightningModule):
     def __init__(self, conf: ModelConf):
         super(ExAbModel, self).__init__()
         self.exab = ExAb(conf=conf)
+        self.ext_loss = nn.BCELoss()
+        self.abst_loss = nn.CrossEntropyLoss()
 
+    def configure_scheduler(self, optimizer: torch.optim.Optimizer):
+        scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
+                                                                                       num_warmup_steps=self.num_warmup_steps,
+                                                                                       num_training_steps=self.num_training_steps)
+        
+        return scheduler
+    
     def configure_optimizers(self):
         param_optimizer = [[name, param] for name, param in self.exab.model.named_parameters() if param.requires_grad]
         optimizer_grouped_parameters = [
@@ -66,23 +75,46 @@ class ExAbModel(pl.LightningModule):
              'weight_decay': 0.0}
         ]
 
-        optimizer: torch.optim.Optimizer = torch.optim.AdamW(
-            optimizer_grouped_parameters, lr=self.lr)
+        optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.lr)
+        scheduler = self.configure_scheduler(optimizer)
 
-        return optimizer
-    
-#     # def optimizers(self):
-#     #     pass
-    
-#     # def lr_schedulers(self):
-#     #     pass
-    
+        return [optimizer], [scheduler]
+
 #     # def forward(self):
 #     #     pass
     
-#     # def training_step(self):
-#     #     pass
+    def training_step(self, batch, batch_idx):
+        pass
     
+    def validation_step(self, batch, batch_idx):
+        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = batch
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
+                                                                attention_mask=attention_mask,
+                                                                decoder_input_ids=decoder_input_ids,
+                                                                decoder_attention_mask=decoder_attention_mask,
+                                                                sent_rep_ids=sent_rep_ids,
+                                                                sent_rep_mask=sent_rep_mask)
+        ex_loss = self.ext_loss(outputs[0], label.float())
+
+        ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+        logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
+        ab_loss = self.abst_loss(logits, ab_label)
+        
+        loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
+        
+        return {"loss": loss, 'abst_loss': ab_loss}
+    
+    def on_validation_end(self):
+        pass
+    
+    # def test_step(self, batch, batch_idx):
+    #     # this is the test loop
+    #     x, y = batch
+    #     x = x.view(x.size(0), -1)
+    #     z = self.encoder(x)
+    #     x_hat = self.decoder(z)
+    #     test_loss = F.mse_loss(x_hat, x)
+    #     self.log("test_loss", test_loss)
 #     # def training_step_end(self, step_output):
 #     #     pass
     
