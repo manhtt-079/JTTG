@@ -23,10 +23,6 @@ from config.config import Config
 
 
 class Trainer(object):
-    # __slots__ = ['config_file', 'conf', 'config_parser', 'device', 'model', 'tokenizer', 'accumulation_steps', 'epochs',
-    #              'log', 'log_loss', 'lr', 'num_freeze_layers', 'weight_decay', 'no_decay', 'patience', 'delta', 'eval_steps', 
-    #              'train_dataloader', 'val_dataloader', 'test_dataloader', 'num_training_steps', 'num_warmup_steps', 'ex_criterion', 
-    #              'ab_criterion', 'auto_weighted_loss', 'optimizer', 'scheduler', 'checkpoint', 'best_checkpoint']
     def __init__(self, conf: Config, device: torch.device):
         
         self.config_file = conf.config_file
@@ -390,6 +386,88 @@ class Trainer(object):
         self.test()
         logger.info("Finish testing.")
 
+class ExAbModel(pl.LightningModule):
+    def __init__(self, config: Config):
+        super(ExAbModel, self).__init__()
+        self.config = config
+        logger.info(f'Init and loading model_checkpoint: {self.config.model.pre_trained_name}')
+        self.exab: nn.Module = ExAb(conf=self.config.model)        
+        logger.info(f"Loading {self.config.model.pre_trained_name} tokenizer...")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.config.model.pre_trained_name)
+        if 't5' in self.config.model.pre_trained_name:
+            self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
+            self.exab.model.resize_token_embeddings(len(self.tokenizer))
+        
+        self.exab = ExAb(conf=self.config.model)
+        self.ext_criterion = nn.BCELoss()
+        self.abst_criterion = nn.CrossEntropyLoss()
+
+    def configure_scheduler(self, optimizer: torch.optim.Optimizer):
+        scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
+                                                                                       num_warmup_steps=self.num_warmup_steps,
+                                                                                       num_training_steps=self.num_training_steps)
+        
+        return scheduler
+    
+    def configure_optimizers(self):
+        param_optimizer = [[name, param] for name, param in self.exab.model.named_parameters() if param.requires_grad]
+        optimizer_grouped_parameters = [
+            {'params': [param for name, param in param_optimizer if not any(nd in name for nd in self.no_decay)],
+             'weight_decay': self.weight_decay},
+            {'params': [param for name, param in param_optimizer if any(nd in name for nd in self.no_decay)],
+             'weight_decay': 0.0}
+        ]
+
+        optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.lr)
+        scheduler = self.configure_scheduler(optimizer)
+
+        return [optimizer], [scheduler]
+
+    def compute_loss(self, batch):
+        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = batch
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
+                                                                attention_mask=attention_mask,
+                                                                decoder_input_ids=decoder_input_ids,
+                                                                decoder_attention_mask=decoder_attention_mask,
+                                                                sent_rep_ids=sent_rep_ids,
+                                                                sent_rep_mask=sent_rep_mask)
+        ext_loss = self.ext_criterion(outputs[0], label.float())
+
+        abst_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+        logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
+        abst_loss = self.abst_criterion(logits, abst_label)
+        
+        loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abst_loss)
+
+        return (loss, abst_loss)
+    
+    def training_step(self, batch, batch_idx):
+        loss: torch.Tensor = self.compute_loss(batch=batch)[0]
+        
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        loss, abst_loss = self.compute_loss(batch=batch)
+        
+        self.log('Loss', loss)
+        self.log('Abst_loss', abst_loss)
+    
+    def forward(self, x):
+        outputs = self.exab.model.generate(
+            input_ids=x['input_ids'],
+            max_length=self.config.dataset.tgt_max_length,
+            attention_mask=x['attention_mask'],
+            num_beams=self.config.trainer.num_beams
+        )
+        outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
+        # Replace -100 in the labels as we can't decode them
+        labels = np.where(batch['decoder_input_ids'][:, 1:] != -100, batch['decoder_input_ids'][:, 1:], self.tokenizer.pad_token_id)
+        actuals = [self.tokenizer.decode(lb, clean_up_tokenization_spaces=False, skip_special_tokens=True) for lb in labels]
+        
+    def predict_step(self, batch, batch_idx):
+        labels, actuals = self.exab(x=batch)
+        
+        return labels, actuals
 
 def str2bool(s: str):
     if isinstance(s, bool):
