@@ -11,3 +11,4 @@ log
 test
 test.py
 venv
+wandb
