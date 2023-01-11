@@ -5,10 +5,10 @@ import pandas as pd
 import evaluate
 import torch
 import torch.nn as nn
+import pytorch_lightning as pl
 from loguru import logger
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from typing import Iterator, Tuple, Dict
-import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import Trainer, seed_everything
@@ -193,14 +193,15 @@ class ExAbModel(pl.LightningModule):
 
 # ----- MAIN process -----
 def main(config: Config, task_name: str):
-    model = ExAbModel(config)
     wandb_logger = WandbLogger(project=task_name, save_dir=config.trainer_args.log)
-    early_stopping = EarlyStopping(monitor=config.trainer_args.monitor,
-                                   mode='min',
-                                   min_delta=config.trainer_args.delta,
-                                   patience=config.trainer_args.patience,
-                                   verbose=True)
-    
+    early_stopping = EarlyStopping(
+        monitor=config.trainer_args.monitor,
+        mode='min',
+        min_delta=config.trainer_args.delta,
+        patience=config.trainer_args.patience,
+        verbose=True
+    )
+
     checkpoint_callback = ModelCheckpoint(
         dirpath=config.trainer_args.checkpoint,
         filename=config.model_name+'-{epoch}-{step}-{val_loss:.2f}',
@@ -209,6 +210,7 @@ def main(config: Config, task_name: str):
         save_top_k=config.trainer_args.save_top_k,
         save_on_train_epoch_end=config.trainer_args.save_on_train_epoch_end
     )
+    
     trainer = Trainer(
         accelerator=config.trainer_args.accelerator,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
@@ -226,14 +228,17 @@ def main(config: Config, task_name: str):
         precision=config.trainer_args.precision
     )
     
-    trainer.fit(model)
     gc.collect()
+    model = ExAbModel(config)
+    trainer.fit(model)
     
     logger.info('----- Testing -----')
     predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
-    
+
+
+ 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
