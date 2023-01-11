@@ -1,3 +1,6 @@
+# ----------- DEPRECATED ------------
+# ----------- MIGRATE TO ``trainer.py``
+
 import argparse
 import traceback
 import os

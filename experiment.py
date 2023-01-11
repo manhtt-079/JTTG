@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import argparse
 import torch
+from loguru import logger
 from config.config import Config
 from main import Trainer, set_gpu
 @dataclass

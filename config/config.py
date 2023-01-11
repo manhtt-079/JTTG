@@ -35,8 +35,7 @@ class BillSumDatasetConf(DatasetBaseConf):
         self.train_path = self.config[self.sec_name]['train_path']
         self.valid_path = self.config[self.sec_name]['valid_path']
         self.test_path = self.config[self.sec_name]['us_test_path'] if self.use_us_test else self.config[self.sec_name]['ca_test_path']
-        
-        
+
 class RedditTifuDatasetConf(DatasetBaseConf):
     def __init__(self, config: configparser.ConfigParser, sec_name: str = 'reddit_tifu_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
@@ -49,7 +48,6 @@ class RedditTifuDatasetConf(DatasetBaseConf):
     @staticmethod
     def join_path(p1, p2):
         return os.path.join(p1, p2)
-    
     
 
 @dataclass
@@ -77,15 +75,33 @@ class TrainerBase(object):
     def __init__(self, config: configparser.ConfigParser) -> None:
         self.config = config
         
+        self.accelerator = self.config['trainer-base']['accelerator']
+        self.accumulate_grad_batches = int(self.config['trainer-base']['accumulate_grad_batches'])
+        self.amp_backend = self.config['trainer-base']['amp_backend']
+        self.auto_lr_find = True if self.config['trainer-base']['auto_lr_find'].lower()=='true' else False
+        self.auto_scale_batch_size = True if self.config['trainer-base']['auto_scale_batch_size'].lower()=='true' else False
+        self.auto_select_gpus = True if self.config['trainer-base']['auto_select_gpus'].lower()=='true' else False
+        self.default_root_dir = self.config['trainer-base']['default_root_dir']
         self.delta = float(self.config['trainer-base']['delta'])
+        self.enable_checkpointing = True if self.config['trainer-base']['enable_checkpointing'].lower()=='true' else False
+        self.enable_progess_bar = True if self.config['trainer-base']['enable_progess_bar'].lower()=='true' else False
+        self.enable_model_summary = True if self.config['trainer-base']['enable_model_summary'].lower()=='true' else False
         self.eval_steps = int(self.config['trainer-base']['eval_steps'])
+        self.monitor = self.config['trainer-base']['monitor']
+        self.log_every_n_steps = int(self.config['trainer-base']['log_every_n_steps'])
         self.losses = self.config['trainer-base']['losses'].split(',')
+        self.max_epochs = int(self.config['trainer-base']['max_epochs'])
         self.n_losses = int(self.config['trainer-base']['n_losses'])
         self.no_decay = self.config['trainer-base']['no_decay'].split(',')
-        self.patience = int(self.config['trainer-base']['patience'])
-        self.warmup_prop = float(self.config['trainer-base']['warmup_prop'])
-        self.weight_decay = float(self.config['trainer-base']['weight_decay'])
         self.num_beams = int(self.config['trainer-base']['num_beams'])
+        self.num_workers = int(self.config['trainer-base']['num_workers'])
+        self.patience = int(self.config['trainer-base']['patience'])
+        self.precision = int(self.config['trainer-base']['precision'])
+        self.save_top_k = int(self.config['trainer-base']['save_top_k'])
+        self.save_on_train_epoch_end = True if self.config['trainer-base']['save_on_train_epoch_end'].lower()=='true' else False
+        self.warmup_ratio = float(self.config['trainer-base']['warmup_ratio'])
+        self.weight_decay = float(self.config['trainer-base']['weight_decay'])
+        
     
     def __repr__(self) -> str:
         return str(self.__dict__)
@@ -95,61 +111,12 @@ class ExAbDatasetTrainer(TrainerBase):
         super().__init__(config)
         self.sec_name = sec_name
 
-        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
+        self.accumulate_grad_batches = int(self.config[self.sec_name]['accumulate_grad_batches'])
         self.checkpoint = self.config[self.sec_name]['checkpoint']
-        self.epochs = int(self.config[self.sec_name]['epochs'])
+        self.max_epochs = int(self.config[self.sec_name]['max_epochs'])
         self.log = self.config[self.sec_name]['log']
         self.lr = float(self.config[self.sec_name]['lr'])
-        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
-        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
         self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
-        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
-        
-        
-class T5DatasetTrainer(TrainerBase):
-    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
-        super().__init__(config)
-        self.sec_name = 't5-sum-trainer' + dataset_name
-
-        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
-        self.checkpoint = self.config[self.sec_name]['checkpoint']
-        self.epochs = int(self.config[self.sec_name]['epochs'])
-        self.log = self.config[self.sec_name]['log']
-        self.lr = float(self.config[self.sec_name]['lr'])
-        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
-        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
-        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
-        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
-        
-class BartPhoDatasetTrainer(TrainerBase):
-    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
-        super().__init__(config)
-        self.sec_name = 'bartpho-sum-trainer' + dataset_name
-
-        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
-        self.checkpoint = self.config[self.sec_name]['checkpoint']
-        self.epochs = int(self.config[self.sec_name]['epochs'])
-        self.log = self.config[self.sec_name]['log']
-        self.lr = float(self.config[self.sec_name]['lr'])
-        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
-        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
-        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
-        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
-        
-class ViT5DatasetTrainer(TrainerBase):
-    def __init__(self, config: configparser.ConfigParser, dataset_name: str) -> None:
-        super().__init__(config)
-        self.sec_name = 'vit5-sum-trainer' + dataset_name
-
-        self.accumulation_steps = int(self.config[self.sec_name]['accumulation_steps'])
-        self.checkpoint = self.config[self.sec_name]['checkpoint']
-        self.epochs = int(self.config[self.sec_name]['epochs'])
-        self.log = self.config[self.sec_name]['log']
-        self.lr = float(self.config[self.sec_name]['lr'])
-        self.n_training_steps = int(self.config[self.sec_name]['n_training_steps'])
-        self.n_warmup_steps = int(self.config[self.sec_name]['n_warmup_steps'])
-        self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
-        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
 
 class Config(object):
     
@@ -170,8 +137,8 @@ class Config(object):
                  config_file: str,
                  dataset_name: str,
                  model_name: str,
-                 is_long: bool = None,
-                 use_us_test: bool = None
+                 is_long: bool = True,
+                 use_us_test: bool = True
                  ) -> None:
         self.config_file = config_file
         self.config = self.read_conf(conf_file=config_file)
@@ -196,15 +163,15 @@ class Config(object):
         return config
     
     @property
-    def trainer(self):
+    def trainer_args(self):
         return ExAbDatasetTrainer(config=self.config, sec_name=self.trainer_sec)
         
     @property
-    def model(self):
+    def model_args(self):
         return ModelConf(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
     
     @property
-    def dataset(self):
+    def dataset_args(self):
         return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.config, is_long=self.is_long, use_us_test=self.use_us_test)
         
 if __name__=='__main__':

@@ -131,14 +131,7 @@ class ExAbDataset(Dataset):
         
         sent_rep_ids = [-1] + [i for i, idx in enumerate(src_inputs['input_ids']) if idx==self.sep_token_id]
         sent_rep_ids = sent_rep_ids[1:]
-        # segs = [sent_rep_ids[i] - sent_rep_ids[i-1] for i in range(1, len(sent_rep_ids))]
-        # segment_ids = []
-        # for i, s in enumerate(segs):
-        #     if (i % 2 == 0):
-        #         segment_ids += s*[0]
-        #     else:
-        #         segment_ids += s*[1]
-
+        
         label = label[:len(sent_rep_ids)]
 
         return src_inputs['input_ids'], tgt_inputs['input_ids'], label, sent_rep_ids   
@@ -228,12 +221,15 @@ class IterableExAbDataset(IterableDataset):
             }
             
             
-def dataset(tokenizer: torch.nn.Module,
-            data_path: str,
-            shuffle: bool = True,
-            src_max_length: int = 1024,
-            tgt_max_length: int = 256,
-            batch_size: int = 4):
+def dataset(
+    tokenizer: torch.nn.Module,
+    data_path: str,
+    shuffle: bool = True,
+    src_max_length: int = 1024,
+    tgt_max_length: int = 256,
+    batch_size: int = 4,
+    num_workers: int = 16
+    ):
 
     dataset = ExAbDataset(tokenizer=tokenizer, data_path=data_path, src_max_length=src_max_length, tgt_max_length=tgt_max_length)
-    return DataLoader(dataset, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle)
+    return DataLoader(dataset, batch_size=batch_size, collate_fn=batch_collate, shuffle=shuffle, num_workers=num_workers)
