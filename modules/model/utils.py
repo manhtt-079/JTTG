@@ -49,7 +49,6 @@ class TransformerEncoderClassifier(nn.Module):
         sent_scores = x.squeeze(-1) * mask.float()
         sent_scores[sent_scores == 0] = -9e3
         
-        # return torch.
         return sent_scores
 
 class Pooling(nn.Module):

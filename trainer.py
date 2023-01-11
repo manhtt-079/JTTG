@@ -131,11 +131,11 @@ class ExAbModel(pl.LightningModule):
 
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
         outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=batch['input_ids'],
-                                                                attention_mask=batch['attention_mask'],
-                                                                decoder_input_ids=batch['decoder_input_ids'],
-                                                                decoder_attention_mask=batch['decoder_attention_mask'],
-                                                                sent_rep_ids=batch['sent_rep_ids'],
-                                                                sent_rep_mask=batch['sent_rep_mask'])
+                                                               attention_mask=batch['attention_mask'],
+                                                               decoder_input_ids=batch['decoder_input_ids'],
+                                                               decoder_attention_mask=batch['decoder_attention_mask'],
+                                                               sent_rep_ids=batch['sent_rep_ids'],
+                                                               sent_rep_mask=batch['sent_rep_mask'])
         ext_loss = self.bce_loss(outputs[0], label.float())
 
         abs_label = batch['decoder_input_ids'].detach().clone()[:, 1:].contiguous().view(-1)
@@ -176,9 +176,12 @@ class ExAbModel(pl.LightningModule):
         )
         outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
         # Replace -100 in the labels as we can't decode them
-        labels = torch.where(x['decoder_input_ids'][:, 1:] != -100, x['decoder_input_ids'][:, 1:], self.tokenizer.pad_token_id)
-        actuals = [self.tokenizer.decode(lb, clean_up_tokenization_spaces=False, skip_special_tokens=True) for lb in labels]
+        labels = torch.where(x['decoder_input_ids'][:, 1:] != -100,
+                             x['decoder_input_ids'][:, 1:], 
+                             self.tokenizer.pad_token_id)
         
+        actuals = [self.tokenizer.decode(lb, clean_up_tokenization_spaces=False, skip_special_tokens=True) for lb in labels]
+
         return outputs, actuals
         
     def predict_step(self, batch: Iterator, batch_idx):
@@ -199,28 +202,28 @@ def main(config: Config, task_name: str):
                                    verbose=True)
     
     checkpoint_callback = ModelCheckpoint(
-        monitor=config.trainer_args.monitor,
         dirpath=config.trainer_args.checkpoint,
         filename=config.model_name+'-{epoch}-{step}-{val_loss:.2f}',
+        monitor=config.trainer_args.monitor,
         mode='min',
         save_top_k=config.trainer_args.save_top_k,
         save_on_train_epoch_end=config.trainer_args.save_on_train_epoch_end
     )
     trainer = Trainer(
-        enable_model_summary=config.trainer_args.enable_model_summary,
         accelerator=config.trainer_args.accelerator,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
-        callbacks=[early_stopping, checkpoint_callback],
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,
         auto_scale_batch_size=config.trainer_args.auto_scale_batch_size,
         auto_select_gpus=config.trainer_args.auto_select_gpus,
-        enable_checkpointing=config.trainer_args.enable_checkpointing,
+        callbacks=[early_stopping, checkpoint_callback],
         default_root_dir=config.trainer_args.checkpoint,
+        enable_model_summary=config.trainer_args.enable_model_summary,
+        enable_checkpointing=config.trainer_args.enable_checkpointing,
+        max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
         log_every_n_steps=config.trainer_args.eval_steps,
-        precision=config.trainer_args.precision,
-        max_epochs=config.trainer_args.max_epochs
+        precision=config.trainer_args.precision
     )
     
     trainer.fit(model)

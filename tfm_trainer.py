@@ -60,42 +60,50 @@ class ExAbDataCollator(DefaultDataCollator):
         return default_data_collator(features=features, return_tensors=return_tensors)
 
 class ExAbTrainer(Seq2SeqTrainer):
-    def __init__(self, 
-                 model = None, 
-                 args = None, 
-                 data_collator = None, 
-                 train_dataset = None, 
-                 eval_dataset = None, 
-                 tokenizer = None, 
-                 model_init = None, 
-                 compute_metrics = None, 
-                 callbacks = None, 
-                 optimizers = ..., 
-                 preprocess_logits_for_metrics = None,
-                 n_lossess: int = 2):
+    def __init__(
+        self,
+        config: Config,
+        model=None,
+        args=None,
+        data_collator=None,
+        train_dataset=None,
+        eval_dataset=None,
+        tokenizer=None,
+        model_init=None,
+        compute_metrics=None,
+        callbacks=None,
+        optimizers=...,
+        preprocess_logits_for_metrics=None,
+        n_lossess: int = 2,
+    ):
         super().__init__(model, args, data_collator, train_dataset, eval_dataset, tokenizer, model_init, compute_metrics, callbacks, optimizers, preprocess_logits_for_metrics)
         
-        self.ex_loss_funct = nn.BCELoss()
-        self.ab_loss_funct = nn.CrossEntropyLoss
+        self.config = config
+        self.exab = model
+        self.bce_loss = nn.BCELoss()
+        self.cross_ent_loss = nn.CrossEntropyLoss()
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=n_lossess)
+        
+        self.prefix = 'layer' if 'bart' in self.config.model_args.pre_trained_name else 'block'
+    
+    def setup(self):
+        
+        self.freeze_layers()
+        pass
     
     def to_input(self, batch):
         return tuple(t.to(self.device) for t in [batch[k] for k in ['input_ids', 'attention_mask', 'decoder_input_ids', 'decoder_attention_mask', 'sent_rep_ids', 'sent_rep_mask', 'label']])
     
     def freeze_layers(self):
-        freeze_layers = []
-        if 'bart' in self.conf.model.name:
-            freeze_layers = [f'{e}.layers.{str(idx)}.' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
-        elif 't5' in self.conf.model.name:
-            freeze_layers = [f'{e}.block.{str(idx)}.layer' for idx in range(self.num_freeze_layers) for e in ['encoder', 'decoder']]
+        freeze_layers = [f'{e}.{self.prefix}.{str(idx)}.layer' for idx in range(self.config.trainer_args.num_freeze_layers) for e in ['encoder', 'decoder']]
         
-        for name, param in self.model.named_parameters():
+        for name, param in self.exab.model.named_parameters():
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
     
     def get_parameter_names(self):
-        param_optimizer = [[name, param] for name, param in self.model.named_parameters() if param.requires_grad]
-        optimizer_parameter_names = [param for name, param in param_optimizer if not any(nd in name for nd in self.no_decay)]
+        param_optimizer = [[name, param] for name, param in self.exab.model.named_parameters() if param.requires_grad]
+        optimizer_parameter_names = [param for name, param in param_optimizer if not any(nd in name for nd in self.config.trainer_args.no_decay)]
         
         return optimizer_parameter_names
     
@@ -108,11 +116,11 @@ class ExAbTrainer(Seq2SeqTrainer):
                                                            sent_rep_ids=sent_rep_ids,
                                                            sent_rep_mask=sent_rep_mask)
         
-        extractive_loss = self.ex_loss_funct(outputs[0], label.float())
+        extractive_loss = self.bce_loss(outputs[0], label.float())
         
-        abstractive_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+        ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
-        abstractive_loss = self.ab_criterion(logits, abstractive_label)
+        abstractive_loss = self.cross_ent_loss(logits, ab_label)
         
         loss: torch.Tensor = self.auto_weighted_loss(extractive_loss, abstractive_loss)
         

@@ -51,7 +51,7 @@ class RedditTifuDatasetConf(DatasetBaseConf):
     
 
 @dataclass
-class ModelConf:
+class ModelArgs:
     name: str
     pre_trained_name: str
     sent_rep_tokens: bool
@@ -168,7 +168,7 @@ class Config(object):
         
     @property
     def model_args(self):
-        return ModelConf(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
+        return ModelArgs(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
     
     @property
     def dataset_args(self):

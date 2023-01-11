@@ -3,11 +3,11 @@ import torch.nn as nn
 from transformers import AutoModelForSeq2SeqLM
 import pytorch_lightning as pl
 from .utils import Pooling, TransformerEncoderClassifier
-from config.config import ModelConf
+from config.config import ModelArgs
 
 class ExAb(nn.Module):
 
-    def __init__(self, conf: ModelConf) -> None:
+    def __init__(self, conf: ModelArgs) -> None:
         super(ExAb, self).__init__()
 
         self.conf = conf
