@@ -112,6 +112,7 @@ class ExAbDatasetTrainer(TrainerBase):
         self.sec_name = sec_name
 
         self.accumulate_grad_batches = int(self.config[self.sec_name]['accumulate_grad_batches'])
+        self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
         self.checkpoint = self.config[self.sec_name]['checkpoint']
         self.max_epochs = int(self.config[self.sec_name]['max_epochs'])
         self.log = self.config[self.sec_name]['log']

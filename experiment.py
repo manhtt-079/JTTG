@@ -60,11 +60,11 @@ class Worker(object):
         
     def test(self, task_name: str):
         kwargs = self.EXPERIMENT_ARCHIVE_MAP[task_name]
-        conf = Config(config_file=self.config_file, **kwargs)
+        config = Config(config_file=self.config_file, **kwargs)
         
-        trainer = Trainer(conf=conf, device=self.device)
-        logger.info(f"Loading the best model from {conf.config[conf.trainer.sec_name]['best_checkpoint']}...")
-        current_epoch = trainer.load_model(path=conf.config[conf.trainer.sec_name]['best_checkpoint'])
+        trainer = Trainer(config=config, device=self.device)
+        logger.info(f"Loading the best model from {config.config[config.trainer_args.sec_name]['best_checkpoint']}...")
+        current_epoch = trainer.load_model(path=config.config[config.trainer_args.sec_name]['best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
         trainer.test()
         

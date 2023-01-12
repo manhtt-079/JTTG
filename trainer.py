@@ -37,7 +37,6 @@ class ExAbModel(pl.LightningModule):
         self.log_dir = self.config.trainer_args.log
         self.checkpoint = self.config.trainer_args.checkpoint
         
-        self.exab = ExAb(conf=self.config.model_args)
         self.bce_loss = self.configure_loss_func(loss_func=self.config.trainer_args.losses[0])
         self.cross_ent_loss = self.configure_loss_func(loss_func=self.config.trainer_args.losses[1])
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.config.trainer_args.n_losses)
@@ -97,7 +96,7 @@ class ExAbModel(pl.LightningModule):
                        num_workers=self.config.trainer_args.num_workers)
     
     def train_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.train_path)
+        return self.get_dataloader(self.config.dataset_args.train_path, shuffle=True)
     
     def val_dataloader(self):
         return self.get_dataloader(self.config.dataset_args.valid_path)
