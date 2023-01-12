@@ -3,7 +3,7 @@ import argparse
 import torch
 from loguru import logger
 from config.config import Config
-from main import Trainer, set_gpu
+from pytorch_trainer import Trainer
 @dataclass
 class Experiment:
     dataset: str
@@ -48,7 +48,6 @@ class Worker(object):
         self.config_file = config_file
         self.experiments = []
         
-        # set_gpu(1)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     def run(self, task_name: str):
