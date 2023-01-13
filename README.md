@@ -139,7 +139,7 @@ EXPERIMENT_MAP = {
 ```
 #### Example
 ```bash
-python3 trainer.py --seed 42 --task task1 --config_file ./config/config.ini
+python3 lightning_trainer.py --task task1
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
