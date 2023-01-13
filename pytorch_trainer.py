@@ -175,11 +175,11 @@ class Trainer(object):
         
         loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
         
-        loss = loss/self.accumulation_steps
+        loss = loss/self.trainer_args.accumulate_grad_batches
         
         loss.backward()
         
-        return loss.item()*self.accumulation_steps
+        return loss.item()*self.trainer_args.accumulate_grad_batches
 
     def validate(self, dataloader):
         self.exab.eval()

@@ -52,9 +52,9 @@ class Worker(object):
     
     def run(self, task_name: str):
         kwargs = self.EXPERIMENT_ARCHIVE_MAP[task_name]
-        conf = Config(config_file=self.config_file, **kwargs)
+        config = Config(config_file=self.config_file, **kwargs)
         
-        trainer = Trainer(conf=conf, device=self.device)
+        trainer = Trainer(config=config, device=self.device)
         trainer.fit()
         
     def test(self, task_name: str):
@@ -70,12 +70,12 @@ class Worker(object):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help="Path to the config file")
-    parser.add_argument('--task_name', type=str, default='task2')
+    parser.add_argument('--task', type=str, default='task2')
 
 
     args = parser.parse_args()
     task = Worker(config_file=args.config_file)
-    task.run(task_name=args.task_name)
+    task.run(task_name=args.task)
 
 if __name__=='__main__':
     main()
