@@ -4,7 +4,6 @@ import math
 import random
 import torch
 
-from loguru import logger
 from typing import List, Any, Dict
 from torch.utils.data import Dataset, DataLoader, IterableDataset
 
