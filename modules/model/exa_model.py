@@ -27,19 +27,21 @@ class ExAb(nn.Module):
             self.encoder = self.model.encoder
 
     def forward(self,
-                input_ids: torch.LongTensor,
-                attention_mask: torch.LongTensor,
+                src_ext_input_ids: torch.LongTensor,
+                src_ext_attention_mask: torch.LongTensor,
+                src_abs_input_ids: torch.LongTensor,
+                src_abs_attention_mask: torch.LongTensor,
                 decoder_input_ids: torch.LongTensor,
                 decoder_attention_mask: torch.LongTensor,
                 sent_rep_ids: torch.Tensor,
                 sent_rep_mask: torch.Tensor):
 
         # batch_size, seq_len, embed_dim
-        word_vectors = self.encoder(input_ids=input_ids, attention_mask=attention_mask)[0]
+        word_vectors = self.encoder(input_ids=src_ext_input_ids, attention_mask=src_ext_attention_mask)[0]
 
         # (batch_size, seq_len, vocab_size)
-        lm_logits = self.model(input_ids=input_ids,
-                               attention_mask=attention_mask,
+        lm_logits = self.model(input_ids=src_abs_input_ids,
+                               attention_mask=src_abs_attention_mask,
                                decoder_input_ids=decoder_input_ids,
                                decoder_attention_mask=decoder_attention_mask).logits
 

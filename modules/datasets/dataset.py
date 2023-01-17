@@ -1,13 +1,12 @@
+import re
 import json
-import logging
 import math
 import random
 import torch
 
+from loguru import logger
 from typing import List, Any, Dict
 from torch.utils.data import Dataset, DataLoader, IterableDataset
-
-logger = logging.getLogger(__name__)
 
 def pad(data: List[List[int]], pad_id: int, width=None, pad_on_left=False, nearest_multiple_of=False):
     """
@@ -57,7 +56,7 @@ def batch_collate(batch):
             result['decoder_attention_mask'] = attention_mask
             continue
         
-        if key == 'input_ids':
+        if key == 'src_ext_input_ids' or key == 'src_abs_input_ids':
             input_ids = feature_list
             
             attention_mask = [[1] * len(ids) for ids in input_ids]
@@ -69,8 +68,12 @@ def batch_collate(batch):
             attention_mask = pad(attention_mask, 0)
             attention_mask = torch.tensor(attention_mask)
             
-            result['input_ids'] = input_ids
-            result['attention_mask'] = attention_mask
+            if key == 'src_ext_input_ids':
+                result['src_ext_input_ids'] = input_ids
+                result['src_ext_attention_mask'] = attention_mask
+            else:
+                result['src_abs_input_ids'] = input_ids
+                result['src_abs_attention_mask'] = attention_mask
             continue
         
         if key in ('label', 'src_token_type_ids'):
@@ -99,8 +102,10 @@ class ExAbDataset(Dataset):
         self.cls_token = self.tokenizer.cls_token
         self.cls_token_id = self.tokenizer.cls_token_id
         self.prefix = ''
+        
         # add prefix if model architecture based on t5
-        if 't5' in tokenizer.name_or_path:
+        # vit5 is not
+        if re.search(r'(?<!vi)(t5)', tokenizer.name_or_path):
             self.prefix = 'summarize: '
         
         self.data = self.load_json()
@@ -116,35 +121,41 @@ class ExAbDataset(Dataset):
         tgt_ = tgt.replace('<q>', ' ')
         tgt_inputs = self.tokenizer(tgt_, truncation=True, max_length=self.tgt_max_length)
         
-        src: str = self.prefix + f' {self.sep_token} {self.cls_token} '.join([' '.join(e) for e in src])
-        src_inputs = self.tokenizer(src, truncation=True, max_length=self.src_max_length)
-        input_ids = src_inputs['input_ids']
+        src: List[str] = [' '.join(e) for e in src]
+        src_abs: str = self.prefix + ' '.join(src)
+        # [SEP] [CLS] sent1 [SEP] [CLS] sent2...
+        src_ext: str = f' {self.sep_token} {self.cls_token} '.join(src)
+        
+        src_abs_inputs = self.tokenizer(src_abs, truncation=True, max_length=self.src_max_length)
+        src_ext_inputs = self.tokenizer(src_ext, truncation=True, max_length=self.src_max_length)
+        
+        input_ids = src_ext_inputs['input_ids']
         if input_ids[-2] == self.sep_token_id:
             # case: xxxx [SEP] [SEP]
-            src_inputs['input_ids'] = input_ids[:-1]
+            src_ext_inputs['input_ids'] = input_ids[:-1]
         if input_ids[-2] == self.cls_token_id:
             # case: xxxx [SEP] [CLS] [SEP]
-            src_inputs['input_ids'] = input_ids[:-2]
+            src_ext_inputs['input_ids'] = input_ids[:-2]
         del input_ids
         
-        src_inputs['attention_mask'] = src_inputs['attention_mask'][:len(src_inputs['input_ids'])]
-        
-        sent_rep_ids = [-1] + [i for i, idx in enumerate(src_inputs['input_ids']) if idx==self.sep_token_id]
+        sent_rep_ids = [-1] + [i for i, idx in enumerate(src_ext_inputs['input_ids']) if idx==self.sep_token_id]
         sent_rep_ids = sent_rep_ids[1:]
         
         label = label[:len(sent_rep_ids)]
 
-        return src_inputs['input_ids'], tgt_inputs['input_ids'], label, sent_rep_ids   
+        return src_ext_inputs['input_ids'], src_abs_inputs['input_ids'], tgt_inputs['input_ids'], label, sent_rep_ids   
         
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx: int):
         row = self.data[idx]
-        input_ids, decoder_input_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
+        src_ext_input_ids, src_abs_input_ids, decoder_input_ids, label, sent_rep_ids = self.tokenize(row['src'], row['tgt'], row['label'])
         
         return {
-            "input_ids": input_ids, "decoder_input_ids": decoder_input_ids,
+            "src_ext_input_ids": src_ext_input_ids, 
+            "src_abs_input_ids": src_abs_input_ids,
+            "decoder_input_ids": decoder_input_ids,
             "sent_rep_ids": sent_rep_ids, "label": label
         }
         

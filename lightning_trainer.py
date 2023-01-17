@@ -129,12 +129,16 @@ class ExAbModel(pl.LightningModule):
         label = batch['label']
 
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=batch['input_ids'],
-                                                               attention_mask=batch['attention_mask'],
-                                                               decoder_input_ids=batch['decoder_input_ids'],
-                                                               decoder_attention_mask=batch['decoder_attention_mask'],
-                                                               sent_rep_ids=batch['sent_rep_ids'],
-                                                               sent_rep_mask=batch['sent_rep_mask'])
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(
+            src_ext_input_ids=batch['src_ext_input_ids'],
+            src_ext_attention_mask=batch['src_ext_attention_mask'],
+            src_abs_input_ids=batch['src_abs_input_ids'],
+            src_abs_attention_mask=batch['src_abs_attention_mask'],
+            decoder_input_ids=batch['decoder_input_ids'],
+            decoder_attention_mask=batch['decoder_attention_mask'],
+            sent_rep_ids=batch['sent_rep_ids'],
+            sent_rep_mask=batch['sent_rep_mask'])
+        
         ext_loss = self.bce_loss(outputs[0], label.float())
 
         abs_label = batch['decoder_input_ids'].detach().clone()[:, 1:].contiguous().view(-1)
@@ -168,9 +172,9 @@ class ExAbModel(pl.LightningModule):
     
     def forward(self, x: Dict[str, torch.Tensor]):
         outputs = self.exab.model.generate(
-            input_ids=x['input_ids'],
+            input_ids=x['src_abs_input_ids'],
             max_length=self.config.dataset_args.tgt_max_length,
-            attention_mask=x['attention_mask'],
+            attention_mask=x['src_abs_attention_mask'],
             num_beams=self.config.trainer_args.num_beams
         )
         outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
