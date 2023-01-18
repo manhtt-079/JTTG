@@ -49,7 +49,7 @@ def main(config: Config, task_name: str):
     
     gc.collect()
     model = ExAbModel(config)
-    trainer.fit(model)
+    trainer.fit(model, ckpt_path='./')
     
     logger.info('----- Testing -----')
     predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')

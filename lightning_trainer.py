@@ -12,7 +12,6 @@ from typing import Iterator, Tuple, Dict
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.loggers import WandbLogger
 
 from modules.datasets.dataset import dataset
 from modules.model.utils import AutomaticWeightedLoss
@@ -215,7 +214,9 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
+        enable_progress_bar=False,
         accelerator=config.trainer_args.accelerator,
+        devices=config.trainer_args.devices,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,

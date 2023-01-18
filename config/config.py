@@ -83,6 +83,7 @@ class TrainerBase(object):
         self.auto_select_gpus = True if self.config['trainer-base']['auto_select_gpus'].lower()=='true' else False
         self.default_root_dir = self.config['trainer-base']['default_root_dir']
         self.delta = float(self.config['trainer-base']['delta'])
+        self.devices = int(self.config['trainer-base']['devices'])
         self.enable_checkpointing = True if self.config['trainer-base']['enable_checkpointing'].lower()=='true' else False
         self.enable_progess_bar = True if self.config['trainer-base']['enable_progess_bar'].lower()=='true' else False
         self.enable_model_summary = True if self.config['trainer-base']['enable_model_summary'].lower()=='true' else False
