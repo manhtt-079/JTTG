@@ -135,13 +135,14 @@ class Config(object):
         'bartpho-sum'
     }
     
-    def __init__(self, 
-                 config_file: str,
-                 dataset_name: str,
-                 model_name: str,
-                 is_long: bool = True,
-                 use_us_test: bool = True
-                 ) -> None:
+    def __init__(
+        self,
+        config_file: str,
+        dataset_name: str,
+        model_name: str,
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         self.config_file = config_file
         self.config = self.read_conf(conf_file=config_file)
         

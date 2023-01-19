@@ -108,7 +108,7 @@ class ExAbTrainer(Seq2SeqTrainer):
     def evaluate(self, eval_dataset: Optional[Dataset] = None, ignore_keys: Optional[List[str]] = None, metric_key_prefix: str = "eval", **gen_kwargs) -> Dict[str, float]:
         return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix, **gen_kwargs)
     
-    def predict(self, test_dataset: Dataset, ignore_keys: Optional[List[str]] = None, metric_key_prefix: str = "test", **gen_kwargs) -> PredictionOutput:
+    def predict(self, test_dataset: Dataset, ignore_keys: Optional[List[str]] = None, metric_key_prefix: str = "test", **gen_kwargs):
         return super().predict(test_dataset, ignore_keys, metric_key_prefix, **gen_kwargs)
 
     def compute_loss(self, model, inputs, return_outputs=False):

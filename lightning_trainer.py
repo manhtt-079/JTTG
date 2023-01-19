@@ -151,6 +151,7 @@ class ExAbModel(pl.LightningModule):
     def training_step(self, batch: Iterator, batch_idx):
         loss: torch.Tensor = self.compute_loss(batch=batch)[0]
         
+        self.log('train_loss', loss)
         return loss
     
     def validation_step(self, batch: Iterator, batch_idx):

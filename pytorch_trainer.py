@@ -168,13 +168,11 @@ class Trainer(object):
         # decoder_input_ids: [100,1,2,3,4, 5 ]
         # decoder_labels:    [ 1 ,2,3,4,5]
         # logits: init len=decoder_input_id len: --> logits[:, :-1] == len(labels)
-        
         abs_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         abs_loss = self.cross_ent_loss(logits, abs_label)
         
         loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
-        
         loss = loss/self.trainer_args.accumulate_grad_batches
         
         loss.backward()
@@ -196,11 +194,11 @@ class Trainer(object):
                                                                        decoder_attention_mask=decoder_attention_mask,
                                                                        sent_rep_ids=sent_rep_ids,
                                                                        sent_rep_mask=sent_rep_mask)
-                ex_loss = self.ex_criterion(outputs[0], label.float())
+                ex_loss = self.bce_loss(outputs[0], label.float())
         
                 ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
                 logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
-                ab_loss = self.ab_criterion(logits, ab_label)
+                ab_loss = self.cross_ent_loss(logits, ab_label)
                 
                 loss: torch.Tensor = self.auto_weighted_loss(ex_loss, ab_loss)
                 running_loss += loss.item()
