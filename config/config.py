@@ -119,6 +119,9 @@ class ExAbDatasetTrainer(TrainerBase):
         self.log = self.config[self.sec_name]['log']
         self.lr = float(self.config[self.sec_name]['lr'])
         self.num_freeze_layers = int(self.config[self.sec_name]['num_freeze_layers'])
+        
+        if self.config[self.sec_name].get('eval_steps'):
+            self.eval_steps = int(self.config[self.sec_name].get('eval_steps'))
 
 class Config(object):
     

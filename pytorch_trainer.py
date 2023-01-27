@@ -31,7 +31,7 @@ class Trainer(object):
         self.dataset_args = self.config.dataset_args
         self.trainer_args = self.config.trainer_args
         
-        logger.info(f'Init and loading model_checkpoint: {self.model_args.pre_trained_name}')
+        logger.info(f'Loading model_checkpoint: {self.model_args.pre_trained_name}')
         self.exab: nn.Module = ExAb(conf=self.model_args)
         self.exab.to(self.device)
         
@@ -40,7 +40,8 @@ class Trainer(object):
         if 't5' in self.model_args.pre_trained_name:
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
-            
+        
+        # use for freeze function
         self.prefix = 'layer' if 'bart' in self.model_args.pre_trained_name else 'block'
 
         logger.info("Get dataloader")
@@ -92,7 +93,8 @@ class Trainer(object):
                        shuffle=shuffle,
                        src_max_length=self.dataset_args.src_max_length,
                        tgt_max_length=self.dataset_args.tgt_max_length,
-                       batch_size=self.dataset_args.batch_size)
+                       batch_size=self.dataset_args.batch_size,
+                       num_workers=self.trainer_args.num_workers)
     
     def configure_loss_func(self, loss_func: str) -> nn.Module:
         """Create loss function based on ``loss_func`` name
@@ -150,25 +152,30 @@ class Trainer(object):
         return optimizer, scheduler
 
     def to_input(self, batch: Iterator):
-        return tuple(t.to(self.device) for t in [batch[k] for k in ['input_ids', 'attention_mask', 'decoder_input_ids', 'decoder_attention_mask', 'sent_rep_ids', 'sent_rep_mask', 'label']])
+        # return tuple(t.to(self.device) for t in [batch[k] for k in ['src_ext_input_ids', 
+        #                                                             'src_ext_attention_mask', 
+        #                                                             'src_abs_input_ids', 
+        #                                                             'src_abs_attention_mask', 
+        #                                                             'decoder_input_ids',
+        #                                                             'decoder_attention_mask'
+        #                                                             'sent_rep_ids', 
+        #                                                             'sent_rep_mask', 
+        #                                                             'label']])
+        return {k:v.to(self.device) for k, v in batch.items()}
     
     def step(self, batch: Iterator):
-        input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
-
-        # outputs[0]: extractive loss, outputs[1]: abstractive loss
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
-                                                               attention_mask=attention_mask,
-                                                               decoder_input_ids=decoder_input_ids,
-                                                               decoder_attention_mask=decoder_attention_mask,
-                                                               sent_rep_ids=sent_rep_ids,
-                                                               sent_rep_mask=sent_rep_mask)
+        batch = self.to_input(batch=batch)
+        ext_label = batch.pop('label')
         
-        ext_loss = self.bce_loss(outputs[0], label.float())
+        # outputs[0]: extractive loss, outputs[1]: abstractive loss
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
+        
+        ext_loss = self.bce_loss(outputs[0], ext_label.float())
         
         # decoder_input_ids: [100,1,2,3,4, 5 ]
         # decoder_labels:    [ 1 ,2,3,4,5]
         # logits: init len=decoder_input_id len: --> logits[:, :-1] == len(labels)
-        abs_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+        abs_label = batch['decoder_input_ids'].detach().clone()[:, 1:].contiguous().view(-1)
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         abs_loss = self.cross_ent_loss(logits, abs_label)
         
@@ -187,16 +194,12 @@ class Trainer(object):
             abs_running_loss: float = 0.0
             
             for batch in dataloader:
-                input_ids, attention_mask, decoder_input_ids, decoder_attention_mask, sent_rep_ids, sent_rep_mask, label = self.to_input(batch)
-                outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(input_ids=input_ids,
-                                                                       attention_mask=attention_mask,
-                                                                       decoder_input_ids=decoder_input_ids,
-                                                                       decoder_attention_mask=decoder_attention_mask,
-                                                                       sent_rep_ids=sent_rep_ids,
-                                                                       sent_rep_mask=sent_rep_mask)
-                ex_loss = self.bce_loss(outputs[0], label.float())
+                batch = self.to_input(batch=batch)
+                ext_label = batch.pop('label')
+                outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
+                ex_loss = self.bce_loss(outputs[0], ext_label.float())
         
-                ab_label = decoder_input_ids.detach().clone()[:, 1:].contiguous().view(-1)
+                ab_label = batch['decoder_input_ids'].detach().clone()[:, 1:].contiguous().view(-1)
                 logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
                 ab_loss = self.cross_ent_loss(logits, ab_label)
                 
@@ -402,28 +405,51 @@ def set_multi_gpu(cuda_visible_devices: str = '0,1,2,3'):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
-def main():
+if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_file', type=str, default='./config/config.ini', help="Path to the config file")
-    parser.add_argument('--dataset_name', type=str, default='reddit_tifu_dataset', help="Path to the config file")
-    parser.add_argument('--model_name', type=str, default='bart-sum', help="Path to the config file")
-    parser.add_argument('--is_long', type=str2bool, const=True, nargs="?", default=False)
-    parser.add_argument('--use_us_test', type=str2bool, const=True, nargs="?", default=False)
-    # parser.add_argument('--resume', type=str2bool, const=True, nargs="?", default=False, help="Whether training resume from a checkpoint or not")
-    parser.add_argument('--gpu_idx', type=int, default=1, help="Path to the config file")
-
-
-    args = parser.parse_args()
-    set_seed()
-    # set_multi_gpu()
-    set_gpu(idx=args.gpu_idx)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    config = Config(config_file=args.config_file, dataset_name=args.dataset_name, model_name=args.model_name, is_long=args.is_long, use_us_test=args.use_us_test)
+    parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
+    parser.add_argument('--task', type=str, default='task6')
+    parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     
-    logger.info("Initializing trainer...")
-    trainer = Trainer(conf=config ,device=device)
+    args = parser.parse_args()
+    set_gpu(idx=args.gpu, cuda_visible_devices='0,1')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    set_seed(args.seed)
+    EXPERIMENT_MAP = {
+        'task1': {
+            'dataset_name': 'reddit_tifu',
+            'model_name': 'bart-sum',
+            'is_long': True
+        },
+        'task2': {
+            'dataset_name': 'bill_sum',
+            'model_name': 'bart-sum',
+            'use_us_test': True
+        },
+        'task3': {
+            'dataset_name': 'reddit_tifu',
+            'model_name': 't5-sum',
+            'is_long': True
+        },
+        'task4': {
+            'dataset_name': 'bill_sum',
+            'model_name': 't5-sum',
+            'use_us_test': True
+        },
+        'task5': {
+            'dataset_name': 'vnds',
+            'model_name': 'bartpho-sum'
+        },
+        'task6': {
+            'dataset_name': 'vnds',
+            'model_name': 'vit5-sum'
+        }
+    }
+
+    kwargs = EXPERIMENT_MAP[args.task]
+    config = Config(config_file=args.config_file, **kwargs)
+    trainer = Trainer(config=config, device=device)
     
     trainer.fit()
-
-if __name__=='__main__':
-    pass
+    

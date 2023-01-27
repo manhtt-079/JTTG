@@ -30,8 +30,10 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
-        resume_from_checkpoint='/home/int2-user/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=19-step=15500-val_loss=2.50.ckpt',
+        resume_from_checkpoint='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=19-step=30980-val_loss=2.74.ckpt',
+        enable_progress_bar=False,
         accelerator=config.trainer_args.accelerator,
+        devices=config.trainer_args.devices,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,
@@ -41,7 +43,7 @@ def main(config: Config, task_name: str):
         default_root_dir=config.trainer_args.checkpoint,
         enable_model_summary=config.trainer_args.enable_model_summary,
         enable_checkpointing=config.trainer_args.enable_checkpointing,
-        max_epochs=config.trainer_args.max_epochs + 10,
+        max_epochs=config.trainer_args.max_epochs+20,
         logger=wandb_logger,
         log_every_n_steps=config.trainer_args.eval_steps,
         precision=config.trainer_args.precision
@@ -49,7 +51,7 @@ def main(config: Config, task_name: str):
     
     gc.collect()
     model = ExAbModel(config)
-    trainer.fit(model, ckpt_path='./')
+    trainer.fit(model)
     
     logger.info('----- Testing -----')
     predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')
@@ -98,4 +100,4 @@ if __name__=='__main__':
 
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)
-    main(config=config)
+    main(config=config, task_name=args.task)
