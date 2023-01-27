@@ -93,7 +93,7 @@ class Trainer(object):
                        shuffle=shuffle,
                        src_max_length=self.dataset_args.src_max_length,
                        tgt_max_length=self.dataset_args.tgt_max_length,
-                       batch_size=self.dataset_args.batch_size,
+                       batch_size=self.trainer_args.batch_size,
                        num_workers=self.trainer_args.num_workers)
     
     def configure_loss_func(self, loss_func: str) -> nn.Module:
@@ -152,15 +152,6 @@ class Trainer(object):
         return optimizer, scheduler
 
     def to_input(self, batch: Iterator):
-        # return tuple(t.to(self.device) for t in [batch[k] for k in ['src_ext_input_ids', 
-        #                                                             'src_ext_attention_mask', 
-        #                                                             'src_abs_input_ids', 
-        #                                                             'src_abs_attention_mask', 
-        #                                                             'decoder_input_ids',
-        #                                                             'decoder_attention_mask'
-        #                                                             'sent_rep_ids', 
-        #                                                             'sent_rep_mask', 
-        #                                                             'label']])
         return {k:v.to(self.device) for k, v in batch.items()}
     
     def step(self, batch: Iterator):
@@ -214,7 +205,7 @@ class Trainer(object):
     def train(self):
         early_stopping = EarlyStopping(patience=self.trainer_args.patience, delta=self.trainer_args.delta)
         
-        train_losses, val_losses = [], []
+        train_losses, val_losses, abs_losses = [], [], []
         for epoch in range(self.trainer_args.max_epochs):
             start: float = time.time()
             self.exab.train()
@@ -232,43 +223,49 @@ class Trainer(object):
                     self.optimizer.zero_grad()
                 if (idx+1) % self.trainer_args.eval_steps == 0 or idx == 0:
                     logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.trainer_args.max_epochs, idx+1, n_iters, running_loss/(idx+1)))
-            else:
-                train_loss = running_loss/n_iters
-                logger.info("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.trainer_args.max_epochs, idx+1, n_iters, train_loss))
 
-                logger.info("-----:----- Evaluating -----:-----")
-                val_loss, abs_loss = self.validate(dataloader=self.val_dataloader)
-                logger.info("     Val loss: {}\n".format(val_loss))
-                logger.info("     Abtractive loss: {}\n".format(abs_loss))
+            train_loss = running_loss/n_iters
+            logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.trainer_args.max_epochs, idx+1, n_iters, train_loss))
 
-                train_losses.append(train_losses)
-                val_losses.append(val_losses)
+            logger.info(f"-----:----- [Epoch: {epoch+1}] - Evaluating -----:-----")
+            val_loss, abs_loss = self.validate(dataloader=self.val_dataloader)
+            logger.info("     Val loss: {}".format(val_loss))
+            logger.info("     Abstractive loss: {}".format(abs_loss))
 
-                early_stopping(val_loss=val_loss)
-                if early_stopping.is_save:
-                    ckp_path: str = os.path.join(self.trainer_args.checkpoint, 'ckp'+str(epoch+1)+'.pt')
-                    logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser.set(self.trainer_args.sec_name, 'best_checkpoint', ckp_path)
-                    self.save_config()
-                    self.save_model(current_epoch=epoch+1, path=ckp_path)
-                if early_stopping.early_stop:
-                    logger.info(f"Early stopping.")
-                    break
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            abs_losses.append(abs_loss)
+
+            early_stopping(val_loss=val_loss)
+            if early_stopping.is_save:
+                self.save(epoch=epoch+1)
+            if early_stopping.early_stop:
+                logger.info(f"Early stopping.")
+                break
         
-        logger.info(f"Total time per epoch: {time.time()-start} seconds")
+            logger.info(f"Total time per epoch: {time.time()-start} seconds\n")
+            
         logger.info(f"Saving log loss to: {os.path.join(self.trainer_args.log, 'loss.txt')}")
-        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
-        np.savetxt(os.path.join(self.trainer_args.log, 'loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
+        train_losses = np.asanyarray(train_losses).reshape(-1,1)
+        val_losses = np.asarray(val_losses).reshape(-1,1)
+        abs_losses = np.asarray(abs_losses).reshape(-1, 1)
+        np.savetxt(os.path.join(self.trainer_args.log, 'loss.txt'), np.hstack((train_losses, val_losses, abs_losses)), delimiter='#')
 
+    def save(self, epoch: int, prefix: str = 'ckpt'):
+        ckp_path: str = os.path.join(self.trainer_args.checkpoint, prefix+str(epoch)+'.pt')
+        logger.info(f"Saving model to: {ckp_path}")
+        self.config_parser.set(self.trainer_args.sec_name, 'best_checkpoint', ckp_path)
+        self.save_config()
+        self.save_model(current_epoch=epoch, path=ckp_path)
 
     def compute_rouge_score(self, dataloader):
         predictions = []
         references = []
         for _, batch in enumerate(tqdm(dataloader)):
             outputs = self.exab.model.generate(
-                input_ids=batch['input_ids'].to('cuda'),
+                input_ids=batch['src_abs_input_ids'].to(self.device),
                 max_length=self.dataset_args.tgt_max_length,
-                attention_mask=batch['attention_mask'].to('cuda'),
+                attention_mask=batch['src_abs_attention_mask'].to(self.device),
                 num_beams=self.trainer_args.num_beams
             )
             outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
@@ -291,19 +288,31 @@ class Trainer(object):
         rouge_score = self.compute_rouge_score(dataloader=self.test_dataloader)
         logger.info("     Rouge_score: {}\n".format(rouge_score))
 
-    def fit(self):
-        logger.info("-----:----- Training -----:-----")
+    def desc(self):
+        trainable_params = sum(p.numel() for p in self.exab.parameters() if p.requires_grad)
+        non_trainable_params = sum(p.numel() for p in self.exab.parameters() if not p.requires_grad)
+        logger.info("-----:----- Model summary -----:-----")
+        logger.info(f'Trainable parameters: {trainable_params}')
+        logger.info(f'Non-trainable parameters: {non_trainable_params}')
+        logger.info(f"Total parameters: {trainable_params+non_trainable_params}")
+        
+        logger.info("-----:----- Trainer summary -----:-----")
         logger.info(f"Epoch: {self.trainer_args.max_epochs}")
+        logger.info(f"Batch size: {self.trainer_args.batch_size}")
         logger.info(f"Num training steps: {self.num_training_steps}")
         logger.info(f"Num warmup steps: {self.num_warmup_steps}")
         logger.info(f"Accumulation steps: {self.trainer_args.accumulate_grad_batches}")
         logger.info(f"Eval steps: {self.trainer_args.eval_steps}")
         logger.info(f"Weight decay: {self.trainer_args.weight_decay}")
         logger.info(f"Learning rate: {self.trainer_args.lr}")
-        logger.info(f"Num freeze layers: {self.trainer_args.num_freeze_layers}")
+        logger.info(f"Num freeze layers: {self.trainer_args.num_freeze_layers}\n")
+    
+    def fit(self):
+        self.desc()
+        logger.info('-----:----- Training -----:-----')
         self.train()
-        logger.info("Finish training.\n")
-        logger.info("Start testing...")
+        logger.info("-----:----- Finish training -----:-----\n")
+        logger.info("-----:----- Testing -----:-----")
         logger.info(f"Loading the best model from {self.config_parser[self.trainer_args.sec_name]['best_checkpoint']}...")
         current_epoch = self.load_model(path=self.config_parser[self.trainer_args.sec_name]['best_checkpoint'])
         logger.info(f"With epoch: {current_epoch}")
@@ -409,7 +418,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
     parser.add_argument('--task', type=str, default='task6')
-    parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     
     args = parser.parse_args()

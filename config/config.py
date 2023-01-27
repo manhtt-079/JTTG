@@ -11,7 +11,6 @@ class DatasetBaseConf(object):
         
         self.config = config
         self.sec_name = sec_name
-        self.batch_size = int(self.config[self.sec_name]['batch_size'])
         self.src_max_length = int(self.config[self.sec_name]['src_max_length'])
         self.tgt_max_length = int(self.config[self.sec_name]['tgt_max_length'])
         self.data_dir = self.config[self.sec_name].get('data_dir', None)
@@ -114,6 +113,7 @@ class ExAbDatasetTrainer(TrainerBase):
 
         self.accumulate_grad_batches = int(self.config[self.sec_name]['accumulate_grad_batches'])
         self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+        self.batch_size = int(self.config[self.sec_name]['batch_size'])
         self.checkpoint = self.config[self.sec_name]['checkpoint']
         self.max_epochs = int(self.config[self.sec_name]['max_epochs'])
         self.log = self.config[self.sec_name]['log']
