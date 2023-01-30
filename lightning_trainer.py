@@ -19,7 +19,6 @@ from modules.model.exa_model import ExAb
 
 from config.config import Config
 
-metrics = evaluate.load('rouge')
 class ExAbModel(pl.LightningModule):
     def __init__(self, config: Config):
         super(ExAbModel, self).__init__()
@@ -40,7 +39,7 @@ class ExAbModel(pl.LightningModule):
         self.cross_ent_loss = self.configure_loss_func(loss_func=self.config.trainer_args.losses[1])
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.config.trainer_args.n_losses)
         
-        self.num_training_steps = len(self.train_dataloader()) * self.config.trainer_args.max_epochs
+        self.num_training_steps = len(self.train_dataloader()) // self.config.trainer_args.accumulate_grad_batches * self.config.trainer_args.max_epochs
         self.num_warmup_steps = int(self.config.trainer_args.warmup_ratio * self.num_training_steps)
 
     def configure_loss_func(self, loss_func: str) -> nn.Module:
@@ -122,21 +121,13 @@ class ExAbModel(pl.LightningModule):
         optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.config.trainer_args.lr)
         scheduler = self.configure_scheduler(optimizer)
 
-        return [optimizer], [scheduler]
+        return [optimizer], [{'scheduler': scheduler, 'interval': 'step'}]
 
     def compute_loss(self, batch: Iterator):
-        label = batch['label']
+        label = batch.pop('label')
 
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(
-            src_ext_input_ids=batch['src_ext_input_ids'],
-            src_ext_attention_mask=batch['src_ext_attention_mask'],
-            src_abs_input_ids=batch['src_abs_input_ids'],
-            src_abs_attention_mask=batch['src_abs_attention_mask'],
-            decoder_input_ids=batch['decoder_input_ids'],
-            decoder_attention_mask=batch['decoder_attention_mask'],
-            sent_rep_ids=batch['sent_rep_ids'],
-            sent_rep_mask=batch['sent_rep_mask'])
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
         
         ext_loss = self.bce_loss(outputs[0], label.float())
 
@@ -151,31 +142,29 @@ class ExAbModel(pl.LightningModule):
     def training_step(self, batch: Iterator, batch_idx):
         loss: torch.Tensor = self.compute_loss(batch=batch)[0]
         
-        self.log('train_loss', loss)
+        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
     
     def validation_step(self, batch: Iterator, batch_idx):
-        loss, abs_loss = self.compute_loss(batch=batch)
-        d = {'val_loss': loss, 'abs_loss': abs_loss}
-        self.log_dict(d)
+        total_loss, abs_loss = self.compute_loss(batch=batch)
+
+        result = {'val_loss': total_loss, 'abs_loss': abs_loss}
+        self.log_dict(result)
         
-        return d
+        return result
     
     def validation_epoch_end(self, validation_step_outputs):
         loss = torch.stack([batch['val_loss'] for batch in validation_step_outputs]).mean()
         abs_loss = torch.stack([batch['abs_loss'] for batch in validation_step_outputs]).mean()
         
-        return {
-            'val_loss': loss,
-            'abs_loss': abs_loss
-        }
+        self.log_dict({'val_loss': loss, 'abs_loss': abs_loss}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
     
     def forward(self, x: Dict[str, torch.Tensor]):
         outputs = self.exab.model.generate(
-            input_ids=x['src_abs_input_ids'],
-            max_length=self.config.dataset_args.tgt_max_length,
-            attention_mask=x['src_abs_attention_mask'],
-            num_beams=self.config.trainer_args.num_beams
+            input_ids=x['src_abs_input_ids'].to(self.device),
+            max_length=self.dataset_args.tgt_max_length,
+            attention_mask=x['src_abs_attention_mask'].to(self.device),
+            num_beams=self.trainer_args.num_beams
         )
         outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
         # Replace -100 in the labels as we can't decode them
@@ -189,6 +178,7 @@ class ExAbModel(pl.LightningModule):
         
     def predict_step(self, batch: Iterator, batch_idx):
         outputs, actuals = self.forward(x=batch)
+        metrics = evaluate.load('rouge')
         results = metrics.compute(predictions=outputs, references=actuals)
         return results
 
