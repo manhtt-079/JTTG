@@ -90,7 +90,7 @@ class ExAbModel(pl.LightningModule):
                        shuffle=shuffle,
                        src_max_length=self.config.dataset_args.src_max_length,
                        tgt_max_length=self.config.dataset_args.tgt_max_length,
-                       batch_size=self.config.dataset_args.batch_size,
+                       batch_size=self.config.trainer_args.batch_size,
                        num_workers=self.config.trainer_args.num_workers)
     
     def train_dataloader(self):
@@ -157,7 +157,7 @@ class ExAbModel(pl.LightningModule):
         loss = torch.stack([batch['val_loss'] for batch in validation_step_outputs]).mean()
         abs_loss = torch.stack([batch['abs_loss'] for batch in validation_step_outputs]).mean()
         
-        self.log_dict({'val_loss': loss, 'abs_loss': abs_loss}, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict({'val_loss': loss, 'abs_loss': abs_loss}, on_epoch=True, prog_bar=True, logger=True)
     
     def forward(self, x: Dict[str, torch.Tensor]):
         outputs = self.exab.model.generate(

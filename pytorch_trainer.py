@@ -183,8 +183,8 @@ class Trainer(object):
         
             running_loss: float = 0.0
             abs_running_loss: float = 0.0
-            
-            for batch in dataloader:
+            total: int = len(dataloader)
+            for batch in tqdm(dataloader, desc='Eval', total=total, ncols=100, nrows=5):
                 batch = self.to_input(batch=batch)
                 ext_label = batch.pop('label')
                 outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
