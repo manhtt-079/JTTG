@@ -21,7 +21,7 @@ class ExAb(nn.Module):
             dropout=self.conf.pooler_dropout,
             num_layers=self.conf.num_layers
         )
-        if 'bart' in self.conf.pre_trained_name:
+        if any(pre_trained_name in self.conf.pre_trained_name for pre_trained_name in ['bart', 'pegasus']):
             self.encoder = self.model.model.encoder
         else:
             self.encoder = self.model.encoder

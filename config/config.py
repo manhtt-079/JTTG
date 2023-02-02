@@ -132,6 +132,7 @@ class Config(object):
     }
     
     MODEL_CONF_ARCHIVE_LIST = {
+        'pegasus-sum',
         'bart-sum',
         't5-sum',
         'vit5-sum',
