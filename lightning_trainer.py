@@ -143,7 +143,7 @@ class ExAbModel(pl.LightningModule):
     def training_step(self, batch: Iterator, batch_idx):
         loss: torch.Tensor = self.compute_loss(batch=batch)[0]
         
-        self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log('train_loss', loss, logger=True, on_epoch=True)
         return loss
     
     def validation_step(self, batch: Iterator, batch_idx):
@@ -218,7 +218,7 @@ def main(config: Config, task_name: str):
         enable_checkpointing=config.trainer_args.enable_checkpointing,
         max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
-        log_every_n_steps=config.trainer_args.eval_steps,
+        log_every_n_steps=config.trainer_args.log_every_n_steps,
         precision=config.trainer_args.precision
     )
     
@@ -230,11 +230,6 @@ def main(config: Config, task_name: str):
     predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
-
-def set_gpu(idx: int, cuda_visible_devices: str = '0,1'):
-    torch.cuda.set_device(idx)
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
     
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -242,7 +237,6 @@ if __name__=='__main__':
     parser.add_argument('--task', type=str, default='task7')
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     from experiment import EXPERIMENT_MAP
-    set_gpu(1)
     args = parser.parse_args()
     seed_everything(args.seed)
 
