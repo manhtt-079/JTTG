@@ -175,11 +175,20 @@ class Config(object):
         
     @property
     def model_args(self):
-        return ModelArgs(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
+        return ModelArgs(
+            name=self.model_name,
+            pre_trained_name=self.config[self.model_name]['pre_trained_name'],
+            ffn_dim=self.config[self.model_name]['ffn_dim'],
+            **self.config['model-base']
+        )
     
     @property
     def dataset_args(self):
-        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.config, is_long=self.is_long, use_us_test=self.use_us_test)
+        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](
+            config=self.config,
+            is_long=self.is_long,
+            use_us_test=self.use_us_test
+        )
         
 if __name__=='__main__':
     pass
