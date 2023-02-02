@@ -30,10 +30,10 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
-        resume_from_checkpoint='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt',
+        # resume_from_checkpoint='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt',
         enable_progress_bar=config.trainer_args.enable_progess_bar,
         accelerator=config.trainer_args.accelerator,
-        devices=config.trainer_args.devices,
+        devices=[0],
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,
@@ -43,7 +43,7 @@ def main(config: Config, task_name: str):
         default_root_dir=config.trainer_args.checkpoint,
         enable_model_summary=config.trainer_args.enable_model_summary,
         enable_checkpointing=config.trainer_args.enable_checkpointing,
-        max_epochs=config.trainer_args.max_epochs+20,
+        max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
         log_every_n_steps=config.trainer_args.eval_steps,
         precision=config.trainer_args.precision
@@ -51,10 +51,10 @@ def main(config: Config, task_name: str):
     
     gc.collect()
     model = ExAbModel(config)
-    # trainer.fit(model)
+    # trainer.fit(model, ckpt_path='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt')
     
     logger.info('----- Testing -----')
-    predictions = trainer.predict(model=model, dataloaders=model.test_dataloader())
+    predictions = trainer.predict(model=model, dataloaders=model.test_dataloader(), ckpt_path="/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt")
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
 

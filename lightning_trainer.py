@@ -19,6 +19,7 @@ from modules.model.exa_model import ExAb
 
 from config.config import Config
 
+metrics = evaluate.load('rouge')
 class ExAbModel(pl.LightningModule):
     def __init__(self, config: Config):
         super(ExAbModel, self).__init__()
@@ -84,23 +85,23 @@ class ExAbModel(pl.LightningModule):
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
     
-    def get_dataloader(self, data_path: str, batch_size: int, shuffle: bool = False):
+    def get_dataloader(self, data_path: str, factor: int = 1, shuffle: bool = False):
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        shuffle=shuffle,
                        src_max_length=self.config.dataset_args.src_max_length,
                        tgt_max_length=self.config.dataset_args.tgt_max_length,
-                       batch_size=batch_size,
+                       batch_size=self.config.trainer_args.batch_size*factor,
                        num_workers=self.config.trainer_args.num_workers)
     
     def train_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.train_path, batch_size=self.config.trainer_args.batch_size, shuffle=True)
+        return self.get_dataloader(self.config.dataset_args.train_path, shuffle=True)
     
     def val_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.valid_path, batch_size=self.config.trainer_args.batch_size)
+        return self.get_dataloader(self.config.dataset_args.valid_path)
     
     def test_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.test_path, batch_size=self.config.trainer_args.batch_size*4)
+        return self.get_dataloader(self.config.dataset_args.test_path, factor=self.config.trainer_args.factor_test_size)
     
     def configure_scheduler(self, optimizer: torch.optim.Optimizer):
         scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
@@ -178,7 +179,7 @@ class ExAbModel(pl.LightningModule):
         
     def predict_step(self, batch: Iterator, batch_idx):
         outputs, actuals = self.forward(x=batch)
-        metrics = evaluate.load('rouge')
+        
         results = metrics.compute(predictions=outputs, references=actuals)
         return results
 

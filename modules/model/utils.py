@@ -112,12 +112,24 @@ class AutomaticWeightedLoss(nn.Module):
         params = torch.ones(n_losses, requires_grad=True)
         self.params = nn.parameter.Parameter(params)
         
-    def forward(self, *loss_funcs: List):
+    def forward(self, *losses: List[torch.Tensor]):
         total_loss = 0
-        for i, loss in enumerate(loss_funcs):
+        for i, loss in enumerate(losses):
             total_loss +=  0.5 / (self.params[i] ** 2) * loss + torch.log(1 + self.params[i] ** 2)
             
         return total_loss
+
+
+class AggregationLoss(nn.Module):
+    def __init__(self):
+        super(AggregationLoss, self).__init__()
+        self.hparam = torch.nn.parameter.Parameter(
+            torch.tensor(0.5, requires_grad=True))
+
+    def forward(self, ext_loss: torch.Tensor, abs_loss: torch.Tensor):
+
+        return self.hparam*ext_loss + (1-self.hparam)*abs_loss
+        
 
 class EarlyStopping:
     def __init__(self, patience=5, delta=1e-5):
