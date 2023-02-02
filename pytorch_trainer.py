@@ -37,12 +37,11 @@ class Trainer(object):
         
         logger.info(f"Loading tokenizer: {self.model_args.pre_trained_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_args.pre_trained_name)
-        if 't5' in self.model_args.pre_trained_name:
+        if any(n in self.config.model_args.pre_trained_name for n in ['t5', 'pegasus']):
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
         
-        # use for freeze function
-        self.prefix = 'layer' if 'bart' in self.model_args.pre_trained_name else 'block'
+        self.prefix = 'blocks' if 't5' in self.config.model_args.pre_trained_name else 'layers'
 
         logger.info("Get dataloader")
         self.train_dataloader = self.get_dataloader(data_path=self.dataset_args.train_path, shuffle=True)
@@ -420,41 +419,12 @@ if __name__=='__main__':
     parser.add_argument('--task', type=str, default='task6')
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
+    from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()
     set_gpu(idx=args.gpu, cuda_visible_devices='0,1')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(args.seed)
-    EXPERIMENT_MAP = {
-        'task1': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 'bart-sum',
-            'is_long': True
-        },
-        'task2': {
-            'dataset_name': 'bill_sum',
-            'model_name': 'bart-sum',
-            'use_us_test': True
-        },
-        'task3': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 't5-sum',
-            'is_long': True
-        },
-        'task4': {
-            'dataset_name': 'bill_sum',
-            'model_name': 't5-sum',
-            'use_us_test': True
-        },
-        'task5': {
-            'dataset_name': 'vnds',
-            'model_name': 'bartpho-sum'
-        },
-        'task6': {
-            'dataset_name': 'vnds',
-            'model_name': 'vit5-sum'
-        }
-    }
 
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)

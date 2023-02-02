@@ -84,23 +84,23 @@ class ExAbModel(pl.LightningModule):
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
     
-    def get_dataloader(self, data_path: str, shuffle: bool = False):
+    def get_dataloader(self, data_path: str, batch_size: int, shuffle: bool = False):
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        shuffle=shuffle,
                        src_max_length=self.config.dataset_args.src_max_length,
                        tgt_max_length=self.config.dataset_args.tgt_max_length,
-                       batch_size=self.config.trainer_args.batch_size,
+                       batch_size=batch_size,
                        num_workers=self.config.trainer_args.num_workers)
     
     def train_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.train_path, shuffle=True)
+        return self.get_dataloader(self.config.dataset_args.train_path, batch_size=self.config.trainer_args.batch_size, shuffle=True)
     
     def val_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.valid_path)
+        return self.get_dataloader(self.config.dataset_args.valid_path, batch_size=self.config.trainer_args.batch_size)
     
     def test_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.test_path)
+        return self.get_dataloader(self.config.dataset_args.test_path, batch_size=self.config.trainer_args.batch_size*4)
     
     def configure_scheduler(self, optimizer: torch.optim.Optimizer):
         scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
@@ -230,13 +230,18 @@ def main(config: Config, task_name: str):
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
 
+def set_gpu(idx: int, cuda_visible_devices: str = '0,1'):
+    torch.cuda.set_device(idx)
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+    
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--task', type=str, default='task1')
+    parser.add_argument('--task', type=str, default='task7')
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     from experiment import EXPERIMENT_MAP
-    
+    set_gpu(1)
     args = parser.parse_args()
     seed_everything(args.seed)
 
