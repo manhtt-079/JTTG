@@ -11,7 +11,6 @@ class DatasetBaseConf(object):
         
         self.config = config
         self.sec_name = sec_name
-        self.batch_size = int(self.config[self.sec_name]['batch_size'])
         self.src_max_length = int(self.config[self.sec_name]['src_max_length'])
         self.tgt_max_length = int(self.config[self.sec_name]['tgt_max_length'])
         self.data_dir = self.config[self.sec_name].get('data_dir', None)
@@ -88,6 +87,7 @@ class TrainerBase(object):
         self.enable_progess_bar = True if self.config['trainer-base']['enable_progess_bar'].lower()=='true' else False
         self.enable_model_summary = True if self.config['trainer-base']['enable_model_summary'].lower()=='true' else False
         self.eval_steps = int(self.config['trainer-base']['eval_steps'])
+        self.factor_test_size = int(self.config['trainer-base']['factor_test_size'])
         self.monitor = self.config['trainer-base']['monitor']
         self.log_every_n_steps = int(self.config['trainer-base']['log_every_n_steps'])
         self.losses = self.config['trainer-base']['losses'].split(',')
@@ -114,6 +114,7 @@ class ExAbDatasetTrainer(TrainerBase):
 
         self.accumulate_grad_batches = int(self.config[self.sec_name]['accumulate_grad_batches'])
         self.best_checkpoint = self.config[self.sec_name]['best_checkpoint']
+        self.batch_size = int(self.config[self.sec_name]['batch_size'])
         self.checkpoint = self.config[self.sec_name]['checkpoint']
         self.max_epochs = int(self.config[self.sec_name]['max_epochs'])
         self.log = self.config[self.sec_name]['log']
@@ -132,6 +133,7 @@ class Config(object):
     }
     
     MODEL_CONF_ARCHIVE_LIST = {
+        'pegasus-sum',
         'bart-sum',
         't5-sum',
         'vit5-sum',
@@ -174,11 +176,20 @@ class Config(object):
         
     @property
     def model_args(self):
-        return ModelArgs(name=self.model_name, pre_trained_name=self.config[self.model_name]['pre_trained_name'], **self.config['model-base'])
+        return ModelArgs(
+            name=self.model_name,
+            pre_trained_name=self.config[self.model_name]['pre_trained_name'],
+            ffn_dim=self.config[self.model_name]['ffn_dim'],
+            **self.config['model-base']
+        )
     
     @property
     def dataset_args(self):
-        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](config=self.config, is_long=self.is_long, use_us_test=self.use_us_test)
+        return self.DATASET_CONF_ARCHIVE_MAP[self.dataset_name](
+            config=self.config,
+            is_long=self.is_long,
+            use_us_test=self.use_us_test
+        )
         
 if __name__=='__main__':
     pass

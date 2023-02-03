@@ -30,10 +30,10 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
-        resume_from_checkpoint='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=19-step=30980-val_loss=2.74.ckpt',
-        enable_progress_bar=False,
+        # resume_from_checkpoint='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt',
+        enable_progress_bar=config.trainer_args.enable_progess_bar,
         accelerator=config.trainer_args.accelerator,
-        devices=config.trainer_args.devices,
+        devices=[0],
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,
@@ -43,7 +43,7 @@ def main(config: Config, task_name: str):
         default_root_dir=config.trainer_args.checkpoint,
         enable_model_summary=config.trainer_args.enable_model_summary,
         enable_checkpointing=config.trainer_args.enable_checkpointing,
-        max_epochs=config.trainer_args.max_epochs+20,
+        max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
         log_every_n_steps=config.trainer_args.eval_steps,
         precision=config.trainer_args.precision
@@ -51,10 +51,10 @@ def main(config: Config, task_name: str):
     
     gc.collect()
     model = ExAbModel(config)
-    trainer.fit(model)
+    # trainer.fit(model, ckpt_path='/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt')
     
     logger.info('----- Testing -----')
-    predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')
+    predictions = trainer.predict(model=model, dataloaders=model.test_dataloader(), ckpt_path="/mnt/hdd/manhtt/project_sum/checkpoint/vit5-sum-vnds/vit5-sum-epoch=10-step=17039-val_loss=2.47.ckpt")
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
 
@@ -62,41 +62,12 @@ def main(config: Config, task_name: str):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--task', type=str, default='task1')
+    parser.add_argument('--task', type=str, default='task6')
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
+    from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()
     seed_everything(args.seed)
-    EXPERIMENT_MAP = {
-        'task1': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 'bart-sum',
-            'is_long': True
-        },
-        'task2': {
-            'dataset_name': 'bill_sum',
-            'model_name': 'bart-sum',
-            'use_us_test': True
-        },
-        'task3': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 't5-sum',
-            'is_long': True
-        },
-        'task4': {
-            'dataset_name': 'bill_sum',
-            'model_name': 't5-sum',
-            'use_us_test': True
-        },
-        'task5': {
-            'dataset_name': 'vnds',
-            'model_name': 'bartpho-sum'
-        },
-        'task6': {
-            'dataset_name': 'vnds',
-            'model_name': 'vit5-sum'
-        }
-    }
 
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)

@@ -28,11 +28,11 @@ class ExAbModel(pl.LightningModule):
         self.exab: nn.Module = ExAb(conf=self.config.model_args)        
         logger.info(f"Loading tokenizer: {self.config.model_args.pre_trained_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_args.pre_trained_name)
-        if 't5' in self.config.model_args.pre_trained_name:
+        if any(n in self.config.model_args.pre_trained_name for n in ['t5', 'pegasus']):
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
         
-        self.prefix = 'layers' if 'bart' in self.config.model_args.pre_trained_name else 'block'
+        self.prefix = 'blocks' if 't5' in self.config.model_args.pre_trained_name else 'layers'
         self.log_dir = self.config.trainer_args.log
         self.checkpoint = self.config.trainer_args.checkpoint
         
@@ -40,7 +40,7 @@ class ExAbModel(pl.LightningModule):
         self.cross_ent_loss = self.configure_loss_func(loss_func=self.config.trainer_args.losses[1])
         self.auto_weighted_loss = AutomaticWeightedLoss(n_losses=self.config.trainer_args.n_losses)
         
-        self.num_training_steps = len(self.train_dataloader()) * self.config.trainer_args.max_epochs
+        self.num_training_steps = len(self.train_dataloader()) // self.config.trainer_args.accumulate_grad_batches * self.config.trainer_args.max_epochs
         self.num_warmup_steps = int(self.config.trainer_args.warmup_ratio * self.num_training_steps)
 
     def configure_loss_func(self, loss_func: str) -> nn.Module:
@@ -85,13 +85,13 @@ class ExAbModel(pl.LightningModule):
             if param.requires_grad and any(freeze_layer in name for freeze_layer in freeze_layers):
                 param.requires_grad = False
     
-    def get_dataloader(self, data_path: str, shuffle: bool = False):
+    def get_dataloader(self, data_path: str, factor: int = 1, shuffle: bool = False):
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        shuffle=shuffle,
                        src_max_length=self.config.dataset_args.src_max_length,
                        tgt_max_length=self.config.dataset_args.tgt_max_length,
-                       batch_size=self.config.dataset_args.batch_size,
+                       batch_size=self.config.trainer_args.batch_size*factor,
                        num_workers=self.config.trainer_args.num_workers)
     
     def train_dataloader(self):
@@ -101,7 +101,7 @@ class ExAbModel(pl.LightningModule):
         return self.get_dataloader(self.config.dataset_args.valid_path)
     
     def test_dataloader(self):
-        return self.get_dataloader(self.config.dataset_args.test_path)
+        return self.get_dataloader(self.config.dataset_args.test_path, factor=self.config.trainer_args.factor_test_size)
     
     def configure_scheduler(self, optimizer: torch.optim.Optimizer):
         scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
@@ -122,21 +122,13 @@ class ExAbModel(pl.LightningModule):
         optimizer: torch.optim.Optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=self.config.trainer_args.lr)
         scheduler = self.configure_scheduler(optimizer)
 
-        return [optimizer], [scheduler]
+        return [optimizer], [{'scheduler': scheduler, 'interval': 'step'}]
 
     def compute_loss(self, batch: Iterator):
-        label = batch['label']
+        label = batch.pop('label')
 
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
-        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(
-            src_ext_input_ids=batch['src_ext_input_ids'],
-            src_ext_attention_mask=batch['src_ext_attention_mask'],
-            src_abs_input_ids=batch['src_abs_input_ids'],
-            src_abs_attention_mask=batch['src_abs_attention_mask'],
-            decoder_input_ids=batch['decoder_input_ids'],
-            decoder_attention_mask=batch['decoder_attention_mask'],
-            sent_rep_ids=batch['sent_rep_ids'],
-            sent_rep_mask=batch['sent_rep_mask'])
+        outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
         
         ext_loss = self.bce_loss(outputs[0], label.float())
 
@@ -151,30 +143,28 @@ class ExAbModel(pl.LightningModule):
     def training_step(self, batch: Iterator, batch_idx):
         loss: torch.Tensor = self.compute_loss(batch=batch)[0]
         
-        self.log('train_loss', loss)
+        self.log('train_loss', loss, logger=True, on_epoch=True)
         return loss
     
     def validation_step(self, batch: Iterator, batch_idx):
-        loss, abs_loss = self.compute_loss(batch=batch)
-        d = {'val_loss': loss, 'abs_loss': abs_loss}
-        self.log_dict(d)
+        total_loss, abs_loss = self.compute_loss(batch=batch)
+
+        result = {'val_loss': total_loss, 'abs_loss': abs_loss}
+        self.log_dict(result)
         
-        return d
+        return result
     
     def validation_epoch_end(self, validation_step_outputs):
         loss = torch.stack([batch['val_loss'] for batch in validation_step_outputs]).mean()
         abs_loss = torch.stack([batch['abs_loss'] for batch in validation_step_outputs]).mean()
         
-        return {
-            'val_loss': loss,
-            'abs_loss': abs_loss
-        }
+        self.log_dict({'val_loss': loss, 'abs_loss': abs_loss}, on_epoch=True, prog_bar=True, logger=True)
     
     def forward(self, x: Dict[str, torch.Tensor]):
         outputs = self.exab.model.generate(
-            input_ids=x['src_abs_input_ids'],
+            input_ids=x['src_abs_input_ids'].to(self.device),
             max_length=self.config.dataset_args.tgt_max_length,
-            attention_mask=x['src_abs_attention_mask'],
+            attention_mask=x['src_abs_attention_mask'].to(self.device),
             num_beams=self.config.trainer_args.num_beams
         )
         outputs = [self.tokenizer.decode(out, clean_up_tokenization_spaces=False, skip_special_tokens=True) for out in outputs]
@@ -189,10 +179,9 @@ class ExAbModel(pl.LightningModule):
         
     def predict_step(self, batch: Iterator, batch_idx):
         outputs, actuals = self.forward(x=batch)
+        
         results = metrics.compute(predictions=outputs, references=actuals)
         return results
-
-
 
 # ----- MAIN process -----
 def main(config: Config, task_name: str):
@@ -215,7 +204,7 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
-        enable_progress_bar=False,
+        enable_progress_bar=config.trainer_args.enable_progess_bar,
         accelerator=config.trainer_args.accelerator,
         devices=config.trainer_args.devices,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
@@ -229,7 +218,7 @@ def main(config: Config, task_name: str):
         enable_checkpointing=config.trainer_args.enable_checkpointing,
         max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
-        log_every_n_steps=config.trainer_args.eval_steps,
+        log_every_n_steps=config.trainer_args.log_every_n_steps,
         precision=config.trainer_args.precision
     )
     
@@ -241,47 +230,15 @@ def main(config: Config, task_name: str):
     predictions = trainer.predict(dataloaders=model.test_dataloader(), ckpt_path='best')
     rouge_scores = pd.DataFrame(predictions).mean().to_dict()
     logger.info(rouge_scores)
-
-
- 
+    
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--task', type=str, default='task1')
+    parser.add_argument('--task', type=str, default='task7')
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
-    
+    from experiment import EXPERIMENT_MAP
     args = parser.parse_args()
     seed_everything(args.seed)
-    EXPERIMENT_MAP = {
-        'task1': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 'bart-sum',
-            'is_long': True
-        },
-        'task2': {
-            'dataset_name': 'bill_sum',
-            'model_name': 'bart-sum',
-            'use_us_test': True
-        },
-        'task3': {
-            'dataset_name': 'reddit_tifu',
-            'model_name': 't5-sum',
-            'is_long': True
-        },
-        'task4': {
-            'dataset_name': 'bill_sum',
-            'model_name': 't5-sum',
-            'use_us_test': True
-        },
-        'task5': {
-            'dataset_name': 'vnds',
-            'model_name': 'bartpho-sum'
-        },
-        'task6': {
-            'dataset_name': 'vnds',
-            'model_name': 'vit5-sum'
-        }
-    }
 
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)
