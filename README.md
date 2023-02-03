@@ -141,6 +141,10 @@ EXPERIMENT_MAP = {
 ```bash
 python3 lightning_trainer.py --task task1
 ```
+or
+```bash
+python3 pytorch_trainer.py --task task1
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
