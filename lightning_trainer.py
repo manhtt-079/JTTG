@@ -32,7 +32,9 @@ class ExAbModel(pl.LightningModule):
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
         
-        self.prefix = 'blocks' if 't5' in self.config.model_args.pre_trained_name else 'layers'
+        # t5 based: decoder.block.7...
+        # bart based: decoder.layers.1...
+        self.prefix = 'block' if 't5' in self.config.model_args.pre_trained_name else 'layers'
         self.log_dir = self.config.trainer_args.log
         self.checkpoint = self.config.trainer_args.checkpoint
         
