@@ -206,18 +206,19 @@ def main(config: Config, task_name: str):
     )
     
     trainer = Trainer(
-        enable_progress_bar=config.trainer_args.enable_progess_bar,
         accelerator=config.trainer_args.accelerator,
-        devices=config.trainer_args.devices,
         accumulate_grad_batches=config.trainer_args.accumulate_grad_batches,
         amp_backend=config.trainer_args.amp_backend,
         auto_lr_find=config.trainer_args.auto_lr_find,
         auto_scale_batch_size=config.trainer_args.auto_scale_batch_size,
         auto_select_gpus=config.trainer_args.auto_select_gpus,
+        enable_progress_bar=config.trainer_args.enable_progess_bar,
         callbacks=[early_stopping, checkpoint_callback],
+        devices=config.trainer_args.devices,
         default_root_dir=config.trainer_args.checkpoint,
         enable_model_summary=config.trainer_args.enable_model_summary,
         enable_checkpointing=config.trainer_args.enable_checkpointing,
+        gradient_clip_val=config.trainer_args.gradient_clip_val,
         max_epochs=config.trainer_args.max_epochs,
         logger=wandb_logger,
         log_every_n_steps=config.trainer_args.log_every_n_steps,
@@ -241,7 +242,7 @@ if __name__=='__main__':
     from experiment import EXPERIMENT_MAP
     args = parser.parse_args()
     seed_everything(args.seed)
-
+    
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)
     main(config=config, task_name=args.task)

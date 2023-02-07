@@ -88,6 +88,7 @@ class TrainerBase(object):
         self.enable_model_summary = True if self.config['trainer-base']['enable_model_summary'].lower()=='true' else False
         self.eval_steps = int(self.config['trainer-base']['eval_steps'])
         self.factor_test_size = int(self.config['trainer-base']['factor_test_size'])
+        self.gradient_clip_val = float(self.config['trainer-base']['gradient_clip_val'])
         self.monitor = self.config['trainer-base']['monitor']
         self.log_every_n_steps = int(self.config['trainer-base']['log_every_n_steps'])
         self.losses = self.config['trainer-base']['losses'].split(',')
