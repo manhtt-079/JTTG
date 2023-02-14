@@ -23,13 +23,12 @@ from config.config import Config
 class Trainer(object):
     def __init__(self, config: Config, device: torch.device):
         
-        self.config = config
-        self.config_parser = self.config.config
-        self.config_file = self.config.config_file
+        self.config_parser = config.config
+        self.config_file = config.config_file
         self.device = device
-        self.model_args = self.config.model_args
-        self.dataset_args = self.config.dataset_args
-        self.trainer_args = self.config.trainer_args
+        self.model_args = config.model_args
+        self.dataset_args = config.dataset_args
+        self.trainer_args = config.trainer_args
         
         logger.info(f'Loading model_checkpoint: {self.model_args.pre_trained_name}')
         self.exab: nn.Module = ExAb(conf=self.model_args)
@@ -37,11 +36,13 @@ class Trainer(object):
         
         logger.info(f"Loading tokenizer: {self.model_args.pre_trained_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_args.pre_trained_name)
-        if any(n in self.config.model_args.pre_trained_name for n in ['t5', 'pegasus']):
+        if any(n in self.model_args.pre_trained_name for n in ['t5', 'pegasus']):
             self.tokenizer.add_special_tokens({'cls_token': '<s>', 'sep_token': '</s>'})
             self.exab.model.resize_token_embeddings(len(self.tokenizer))
         
-        self.prefix = 'blocks' if 't5' in self.config.model_args.pre_trained_name else 'layers'
+        # t5 based: decoder.block.7...
+        # bart based: decoder.layers.1...
+        self.prefix = 'block' if 't5' in self.model_args.pre_trained_name else 'layers'
 
         logger.info("Get dataloader")
         self.train_dataloader = self.get_dataloader(data_path=self.dataset_args.train_path, shuffle=True)
@@ -390,7 +391,6 @@ class Trainer(object):
         self.test()
         logger.info("Finish testing.")
 
-    
 def str2bool(s: str):
     if isinstance(s, bool):
         return s
@@ -400,7 +400,6 @@ def str2bool(s: str):
         return False
     else:
         return argparse.ArgumentTypeError("Boolen values are expected!")
-
 
 def set_gpu(idx: int, cuda_visible_devices: str = '0,1,2'):
     transformers.logging.set_verbosity_error()
@@ -415,10 +414,10 @@ def set_multi_gpu(cuda_visible_devices: str = '0,1,2,3'):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--task', type=str, default='task6')
-    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
+    parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
+    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--task', type=str, default='task6')
     from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()

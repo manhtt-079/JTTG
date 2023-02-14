@@ -24,7 +24,7 @@ class ExAbModel(pl.LightningModule):
     def __init__(self, config: Config):
         super(ExAbModel, self).__init__()
         self.config = config
-        logger.info(f'Init and loading model_checkpoint: {self.config.model_args.pre_trained_name}')
+        logger.info(f'Loading model_checkpoint: {self.config.model_args.pre_trained_name}')
         self.exab: nn.Module = ExAb(conf=self.config.model_args)        
         logger.info(f"Loading tokenizer: {self.config.model_args.pre_trained_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.config.model_args.pre_trained_name)
