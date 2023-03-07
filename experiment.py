@@ -30,7 +30,23 @@ EXPERIMENT_MAP = {
     'task7': {
         'dataset_name': 'reddit_tifu',
         'model_name': 'pegasus-sum'
-    }
+    },
+    'task8': {
+        'dataset_name': 'vinewsqa',
+        'model_name': 'bartpho-sum'
+    },
+    'task9': {
+        'dataset_name': 'vinewsqa',
+        'model_name': 'vit5-sum'
+    },
+    'task10': {
+        'dataset_name': 'viquad',
+        'model_name': 'bartpho-sum'
+    },
+    'task11': {
+        'dataset_name': 'viquad',
+        'model_name': 'vit5-sum'
+    },
 }
 
 if __name__=='__main__':

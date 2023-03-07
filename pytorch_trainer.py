@@ -86,14 +86,14 @@ class Trainer(object):
         
         return True
     
-    def get_dataloader(self, data_path: str, shuffle: bool = False):
+    def get_dataloader(self, data_path: str, factor: int = 1, shuffle: bool = False):
         
         return dataset(tokenizer=self.tokenizer, 
                        data_path=data_path,
                        shuffle=shuffle,
                        src_max_length=self.dataset_args.src_max_length,
                        tgt_max_length=self.dataset_args.tgt_max_length,
-                       batch_size=self.trainer_args.batch_size,
+                       batch_size=self.trainer_args.batch_size*factor,
                        num_workers=self.trainer_args.num_workers)
     
     def configure_loss_func(self, loss_func: str) -> nn.Module:
@@ -238,7 +238,7 @@ class Trainer(object):
 
             early_stopping(val_loss=val_loss)
             if early_stopping.is_save:
-                self.save(epoch=epoch+1)
+                self.save(epoch=epoch+1, is_best_ckpt=early_stopping.is_best_ckpt)
             if early_stopping.early_stop:
                 logger.info(f"Early stopping.")
                 break
@@ -251,11 +251,12 @@ class Trainer(object):
         abs_losses = np.asarray(abs_losses).reshape(-1, 1)
         np.savetxt(os.path.join(self.trainer_args.log, 'loss.txt'), np.hstack((train_losses, val_losses, abs_losses)), delimiter='#')
 
-    def save(self, epoch: int, prefix: str = 'ckpt'):
+    def save(self, epoch: int, is_best_ckpt: bool, prefix: str = 'ckpt'):
         ckp_path: str = os.path.join(self.trainer_args.checkpoint, prefix+str(epoch)+'.pt')
         logger.info(f"Saving model to: {ckp_path}")
-        self.config_parser.set(self.trainer_args.sec_name, 'best_checkpoint', ckp_path)
-        self.save_config()
+        if is_best_ckpt:
+            self.config_parser.set(self.trainer_args.sec_name, 'best_checkpoint', ckp_path)
+            self.save_config()
         self.save_model(current_epoch=epoch, path=ckp_path)
 
     def compute_rouge_score(self, dataloader):
@@ -284,7 +285,7 @@ class Trainer(object):
     def test(self):
         del self.train_dataloader
         del self.val_dataloader
-        self.test_dataloader = self.get_dataloader(data_path=self.dataset_args.test_path)
+        self.test_dataloader = self.get_dataloader(data_path=self.dataset_args.test_path, factor=self.trainer_args.factor_test_size)
         rouge_score = self.compute_rouge_score(dataloader=self.test_dataloader)
         logger.info("     Rouge_score: {}\n".format(rouge_score))
 
@@ -416,7 +417,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--task', type=str, default='task6')
     from experiment import EXPERIMENT_MAP
     

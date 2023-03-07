@@ -62,6 +62,32 @@ class VnDS_DataPreparationConf(DataPreparationConf):
         self.data_path = self.conf[self.sec_name]['data_path']
         self.output_dir = self.conf[self.sec_name]['output_dir']
         self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
+        
+class ViNewsQA_DataPRConf(DataPreparationConf):
+    def __init__(self, config_file: str):
+        super().__init__(config_file)
+        
+        self.sec_name = 'ViNewsQA'
+        self.src_col_name = self.conf[self.sec_name]['src_col_name']
+        self.tgt_col_name = self.conf[self.sec_name]['tgt_col_name']
+        self.train_path = self.conf[self.sec_name]['train_path']
+        self.val_path = self.conf[self.sec_name]['val_path']
+        self.test_path = self.conf[self.sec_name]['test_path']
+        self.output_dir = self.conf[self.sec_name]['output_dir']
+        self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
+        
+class ViQuAD_DataPRConf(DataPreparationConf):
+    def __init__(self, config_file: str):
+        super().__init__(config_file)
+        
+        self.sec_name = 'ViQuADv1.1'
+        self.src_col_name = self.conf[self.sec_name]['src_col_name']
+        self.tgt_col_name = self.conf[self.sec_name]['tgt_col_name']
+        self.train_path = self.conf[self.sec_name]['train_path']
+        self.val_path = self.conf[self.sec_name]['val_path']
+        self.test_path = self.conf[self.sec_name]['test_path']
+        self.output_dir = self.conf[self.sec_name]['output_dir']
+        self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
 
 
 if __name__ == '__main__':

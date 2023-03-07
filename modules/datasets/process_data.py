@@ -16,7 +16,13 @@ from abc import ABC, abstractmethod
 from rouge_score import rouge_scorer
 from loguru import logger
 import underthesea
-from config.dataset import DataPreparationConf, Reddit_TIFU_DataPreparationConf, BillSum_DataPreparationConf, VnDS_DataPreparationConf
+from config.dataset import (DataPreparationConf, 
+                            Reddit_TIFU_DataPreparationConf, 
+                            BillSum_DataPreparationConf, 
+                            VnDS_DataPreparationConf,
+                            ViNewsQA_DataPRConf,
+                            ViQuAD_DataPRConf
+                            )
 try:
     nltk.data.find('tokenizers/punkt')
 except:
@@ -150,7 +156,7 @@ class DataPreparationBase(ABC):
                 save_file.write(json_bytes)
         else:
             with open(output_path, "w") as save_file:
-                save_file.write(json.dumps(json_to_save))
+                save_file.write(json.dumps(json_to_save, ensure_ascii=False))
 
 class VIDataPreparation(DataPreparationBase):
     VI_RE_MAP: Dict[str, str] = {"òa": "oà", "Òa": "Oà", "ÒA": "OÀ", "óa": "oá", "Óa": "Oá", "ÓA": "OÁ", "ỏa": "oả", "Ỏa": "Oả", "ỎA": "OẢ", 
@@ -265,7 +271,101 @@ class VNDSDataPreparation(VIDataPreparation):
         self.process_and_save_data(df=df_val, output_dir=self.conf.output_dir, name='val')
         logger.info(f"Processing test data")
         self.process_and_save_data(df=df_test, output_dir=self.conf.output_dir, name='test')
+
+
+class ViNewsQADataPreparation(VIDataPreparation):
+    def __init__(self, conf: ViNewsQA_DataPRConf) -> None:
+        super().__init__(conf)
+        self.setup()
+        logger.info("Setup done!")
+    
+    def setup(self):
+        if not os.path.exists(self.conf.output_dir):
+            os.system(f"mkdir -p {self.conf.output_dir}")
+            os.system(f"chmod -R 777 {self.conf.output_dir}")
         
+        return True
+
+    def filter_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        context, answer = self.conf.src_col_name.split(',')
+        text = df[context] + ' ' + df[answer]
+        text = text.apply(lambda x: self.clean_text(x))
+        question = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        
+        df = pd.DataFrame(zip(text, question), columns=[self.conf.src_col_name, self.conf.tgt_col_name])
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset=[self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
+        
+        return df
+    
+    def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
+        logger.info(f"Processing {name} data with no. samples: {len(df)}")
+        self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
+    
+    def build_data(self):
+        logger.info("Reading raw_data")
+        df_train: pd.DataFrame = pd.read_csv(self.conf.train_path)
+        df_val: pd.DataFrame = pd.read_csv(self.conf.val_path)
+        df_test: pd.DataFrame = pd.read_csv(self.conf.test_path)
+
+        logger.info('Filter and clean data')
+        df_train = self.filter_and_clean(df_train)
+        df_val = self.filter_and_clean(df_val)
+        df_test = self.filter_and_clean(df_test)
+        
+        logger.info(f"Processing training data")
+        self.process_and_save_data(df=df_train, output_dir=self.conf.output_dir, name='train')
+        logger.info(f"Processing val data")
+        self.process_and_save_data(df=df_val, output_dir=self.conf.output_dir, name='val')
+        logger.info(f"Processing test data")
+        self.process_and_save_data(df=df_test, output_dir=self.conf.output_dir, name='test')
+
+class ViQuADDataPreparation(VIDataPreparation):
+    def __init__(self, conf: ViQuAD_DataPRConf) -> None:
+        super().__init__(conf)
+        self.setup()
+        logger.info("Setup done!")
+    
+    def setup(self):
+        if not os.path.exists(self.conf.output_dir):
+            os.system(f"mkdir -p {self.conf.output_dir}")
+            os.system(f"chmod -R 777 {self.conf.output_dir}")
+        
+        return True
+
+    def filter_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        context, answer = self.conf.src_col_name.split(',')
+        text = df[context] + ' ' + df[answer]
+        text = text.apply(lambda x: self.clean_text(x))
+        question = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        
+        df = pd.DataFrame(zip(text, question), columns=[self.conf.src_col_name, self.conf.tgt_col_name])
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset=[self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
+        
+        return df
+    
+    def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
+        logger.info(f"Processing {name} data with no. samples: {len(df)}")
+        self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
+    
+    def build_data(self):
+        logger.info("Reading raw_data")
+        df_train: pd.DataFrame = pd.read_csv(self.conf.train_path)
+        df_val: pd.DataFrame = pd.read_csv(self.conf.val_path)
+        df_test: pd.DataFrame = pd.read_csv(self.conf.test_path)
+
+        logger.info('Filter and clean data')
+        df_train = self.filter_and_clean(df_train)
+        df_val = self.filter_and_clean(df_val)
+        df_test = self.filter_and_clean(df_test)
+        
+        logger.info(f"Processing training data")
+        self.process_and_save_data(df=df_train, output_dir=self.conf.output_dir, name='train')
+        logger.info(f"Processing val data")
+        self.process_and_save_data(df=df_val, output_dir=self.conf.output_dir, name='val')
+        logger.info(f"Processing test data")
+        self.process_and_save_data(df=df_test, output_dir=self.conf.output_dir, name='test')    
     
 class RedditTIFUDataPreparation(ENDataPreparation):
     def __init__(self, conf: Reddit_TIFU_DataPreparationConf) -> None:

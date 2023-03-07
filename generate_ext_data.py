@@ -4,20 +4,26 @@ from config.dataset import (
     Reddit_TIFU_DataPreparationConf,
     BillSum_DataPreparationConf,
     VnDS_DataPreparationConf,
-    DataPreparationConf
+    DataPreparationConf,
+    ViNewsQA_DataPRConf,
+    ViQuAD_DataPRConf
 )
 
 from modules.datasets.process_data import (
     RedditTIFUDataPreparation,
     BillSumDataPreparation,
-    VNDSDataPreparation
+    VNDSDataPreparation,
+    ViNewsQADataPreparation,
+    ViQuADDataPreparation
 )
 
 
 PROCESSOR_ARCHIVE_MAP = {
     'reddit_tifu': {'conf': Reddit_TIFU_DataPreparationConf, 'processor': RedditTIFUDataPreparation},
     'bill_sum': {'conf': BillSum_DataPreparationConf, 'processor': BillSumDataPreparation},
-    'vnds': {'conf': VnDS_DataPreparationConf, 'processor': VNDSDataPreparation}
+    'vnds': {'conf': VnDS_DataPreparationConf, 'processor': VNDSDataPreparation},
+    'vinewsqa': {'conf': ViNewsQA_DataPRConf, 'processor': ViNewsQADataPreparation},
+    'viquad': {'conf': ViQuAD_DataPRConf, 'processor': ViQuADDataPreparation},
 }
 
 def main():

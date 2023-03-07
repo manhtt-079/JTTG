@@ -12,3 +12,4 @@ log
 test.py
 venv
 wandb
+test_model.py

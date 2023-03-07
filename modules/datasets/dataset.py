@@ -84,11 +84,12 @@ def batch_collate(batch):
 
 
 class ExAbDataset(Dataset):
-    def __init__(self,
-                 tokenizer: torch.nn.Module,
-                 data_path: str,
-                 src_max_length: int = 1024,
-                 tgt_max_length: int = 256
+    def __init__(
+        self,
+        tokenizer: torch.nn.Module,
+        data_path: str,
+        src_max_length: int = 1024,
+        tgt_max_length: int = 256
     ) -> None:
         
         super().__init__()
