@@ -161,7 +161,7 @@ class Trainer(object):
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
         outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
         
-        ext_loss = self.bce_loss(outputs[0], ext_label.float())
+        # ext_loss = self.bce_loss(outputs[0], ext_label.float())
         
         # decoder_input_ids: [100,1,2,3,4, 5 ]
         # decoder_labels:    [ 1 ,2,3,4,5]
@@ -170,7 +170,8 @@ class Trainer(object):
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         abs_loss = self.cross_ent_loss(logits, abs_label)
         
-        loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
+        # loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
+        loss = abs_loss
         loss = loss/self.trainer_args.accumulate_grad_batches
         
         loss.backward()

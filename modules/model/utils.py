@@ -3,20 +3,30 @@ import torch.nn as nn
 from typing import List
 
 class TransformerEncoderClassifier(nn.Module):
-    def __init__(self,
-                 n_classes: int,
-                 d_model: int,
-                 nhead=8,
-                 dim_feedforward=2048,
-                 dropout=0.1,
-                 num_layers=2
-        ):
+    def __init__(
+        self,
+        n_classes: int,
+        d_model: int,
+        nhead=8,
+        dim_feedforward=2048,
+        dropout=0.1,
+        num_layers=2
+    ):
         super(TransformerEncoderClassifier, self).__init__()
 
         self.nhead = nhead
-        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward=dim_feedforward, dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=self.nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout
+        )
         layer_norm = nn.LayerNorm(d_model)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers, norm=layer_norm)
+        self.encoder = nn.TransformerEncoder(
+            encoder_layer=encoder_layer,
+            num_layers=num_layers,
+            norm=layer_norm
+        )
 
         self.out_proj = nn.Linear(d_model, n_classes)
 
@@ -56,7 +66,12 @@ class Pooling(nn.Module):
         super(Pooling, self).__init__()
         self.sent_rep_tokens = sent_rep_tokens
     
-    def forward(self, word_vector: torch.Tensor, sent_rep_ids: torch.Tensor, sent_rep_mask: torch.Tensor):
+    def forward(
+        self,
+        word_vector: torch.Tensor,
+        sent_rep_ids: torch.Tensor,
+        sent_rep_mask: torch.Tensor
+    ):
         output_vectors = []
         output_masks = []
         if self.sent_rep_tokens:
@@ -73,12 +88,13 @@ class Pooling(nn.Module):
 
 
 class ExAbClassifierHead(nn.Module):
-    def __init__(self,
-                 input_dim: int,
-                 inner_dim: int,
-                 num_classes: int,
-                 pooler_dropout: float
-        ) -> None:
+    def __init__(
+        self,
+        input_dim: int,
+        inner_dim: int,
+        num_classes: int,
+        pooler_dropout: float
+    ) -> None:
         super(ExAbClassifierHead, self).__init__()
         
         self.ln = nn.Linear(in_features=input_dim, out_features=inner_dim)

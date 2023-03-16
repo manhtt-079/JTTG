@@ -7,7 +7,14 @@ import torch
 from typing import List, Any, Dict
 from torch.utils.data import Dataset, DataLoader, IterableDataset
 
-def pad(data: List[List[int]], pad_id: int, width=None, pad_on_left=False, nearest_multiple_of=False):
+
+def pad(
+    data: List[List[int]],
+    pad_id: int,
+    width=None,
+    pad_on_left=False,
+    nearest_multiple_of=False
+):
     """
     Pad ``data`` with ``pad_id`` to ``width`` on the right by default but if
     ``pad_on_left`` then left.

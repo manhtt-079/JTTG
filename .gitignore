@@ -13,3 +13,8 @@ test.py
 venv
 wandb
 test_model.py
+tmp
+test_trainer.py
+usa_trainer.py
+preds.txt
+refs.txt

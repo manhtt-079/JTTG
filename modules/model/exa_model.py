@@ -39,18 +39,21 @@ class ExAb(nn.Module):
         ):
 
         # batch_size, seq_len, embed_dim
-        word_vectors = self.encoder(input_ids=src_ext_input_ids, attention_mask=src_ext_attention_mask)[0]
+        word_vectors = self.encoder(
+            input_ids=src_ext_input_ids,
+            attention_mask=src_ext_attention_mask)[0]
 
         # (batch_size, seq_len, vocab_size)
-        lm_logits = self.model(input_ids=src_abs_input_ids,
-                               attention_mask=src_abs_attention_mask,
-                               decoder_input_ids=decoder_input_ids,
-                               decoder_attention_mask=decoder_attention_mask).logits
+        logits = self.model(
+            input_ids=src_abs_input_ids,
+            attention_mask=src_abs_attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask).logits
 
         # batch_size, no. sent_rep_ids, embed_dim
         sent_vecs, sent_mask = self.pooling(word_vectors, sent_rep_ids, sent_rep_mask)
         # batch_size, no. sent_rep_ids, embed_dim
         cls_logits = self.tfm_classifier(sent_vecs, sent_mask)
 
-        return (cls_logits, lm_logits)
+        return (cls_logits, logits)
     

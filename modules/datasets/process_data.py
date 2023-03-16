@@ -16,13 +16,14 @@ from abc import ABC, abstractmethod
 from rouge_score import rouge_scorer
 from loguru import logger
 import underthesea
-from config.dataset import (DataPreparationConf, 
-                            Reddit_TIFU_DataPreparationConf, 
-                            BillSum_DataPreparationConf, 
-                            VnDS_DataPreparationConf,
-                            ViNewsQA_DataPRConf,
-                            ViQuAD_DataPRConf
-                            )
+from config.dataset import (
+    DataPreparationConf,
+    Reddit_TIFU_DataPreparationConf,
+    BillSum_DataPreparationConf,
+    VnDS_DataPreparationConf,
+    ViNewsQA_DataPRConf,
+    ViQuAD_DataPRConf
+)
 try:
     nltk.data.find('tokenizers/punkt')
 except:

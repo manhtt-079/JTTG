@@ -1,13 +1,24 @@
+import logging
+import logging.config
 import os
 import configparser
 from dataclasses import dataclass
 
+logging.config.fileConfig('./config/logger.ini')
+logger = logging.getLogger()
+
+def get_logger():
+    return logger
+
+
 class DatasetBaseConf(object):
-    def __init__(self, 
-                 config: configparser.ConfigParser, 
-                 sec_name: str,
-                 is_long: bool = True,
-                 use_us_test: bool = True) -> None:
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str,
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         
         self.config = config
         self.sec_name = sec_name
@@ -21,15 +32,29 @@ class DatasetBaseConf(object):
         return str(self.__dict__)
     
 class VnDsDatasetConf(DatasetBaseConf):
-    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'vnds_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'vnds_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
         
         self.train_path = self.config[self.sec_name]['train_path']
         self.valid_path = self.config[self.sec_name]['valid_path']
         self.test_path = self.config[self.sec_name]['test_path']
         
+
 class ViNewsQADatasetConf(DatasetBaseConf):
-    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'vinewsqa_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'vinewsqa_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
         
         self.train_path = self.config[self.sec_name]['train_path']
@@ -37,22 +62,42 @@ class ViNewsQADatasetConf(DatasetBaseConf):
         self.test_path = self.config[self.sec_name]['test_path']
         
 class ViQuadDatasetConf(DatasetBaseConf):
-    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'viquad_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'viquad_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
         
         self.train_path = self.config[self.sec_name]['train_path']
         self.valid_path = self.config[self.sec_name]['valid_path']
         self.test_path = self.config[self.sec_name]['test_path']
 
+
 class BillSumDatasetConf(DatasetBaseConf):
-    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'bill_sum_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'bill_sum_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
         self.train_path = self.config[self.sec_name]['train_path']
         self.valid_path = self.config[self.sec_name]['valid_path']
         self.test_path = self.config[self.sec_name]['us_test_path'] if self.use_us_test else self.config[self.sec_name]['ca_test_path']
 
+
 class RedditTifuDatasetConf(DatasetBaseConf):
-    def __init__(self, config: configparser.ConfigParser, sec_name: str = 'reddit_tifu_dataset', is_long: bool = True, use_us_test: bool = True) -> None:
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'reddit_tifu_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
         super().__init__(config, sec_name, is_long, use_us_test)
         
         self.data_dir = self.config[self.sec_name]['long_dir'] if self.is_long else self.config[self.sec_name]['short_dir']
