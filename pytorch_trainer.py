@@ -9,7 +9,7 @@ import transformers
 import evaluate
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup, AutoTokenizer
-from typing import Iterator, Tuple
+from typing import Iterable, Iterator, Tuple
 from loguru import logger
 
 from modules.datasets.dataset import dataset
@@ -88,13 +88,15 @@ class Trainer(object):
     
     def get_dataloader(self, data_path: str, factor: int = 1, shuffle: bool = False):
         
-        return dataset(tokenizer=self.tokenizer, 
-                       data_path=data_path,
-                       shuffle=shuffle,
-                       src_max_length=self.dataset_args.src_max_length,
-                       tgt_max_length=self.dataset_args.tgt_max_length,
-                       batch_size=self.trainer_args.batch_size*factor,
-                       num_workers=self.trainer_args.num_workers)
+        return dataset(
+            tokenizer=self.tokenizer,
+            data_path=data_path,
+            shuffle=shuffle,
+            src_max_length=self.dataset_args.src_max_length,
+            tgt_max_length=self.dataset_args.tgt_max_length,
+            batch_size=self.trainer_args.batch_size*factor,
+            num_workers=self.trainer_args.num_workers
+        )
     
     def configure_loss_func(self, loss_func: str) -> nn.Module:
         """Create loss function based on ``loss_func`` name
@@ -139,10 +141,12 @@ class Trainer(object):
         return optimizer
     
     def configure_scheduler(self, optimizer: torch.optim.Optimizer):
-        scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(optimizer=optimizer,
-                                                                                       num_warmup_steps=self.trainer_args.warmup_ratio,
-                                                                                       num_training_steps=self.num_training_steps)
-        
+        scheduler: torch.optim.lr_scheduler.LambdaLR = get_linear_schedule_with_warmup(
+            optimizer=optimizer,
+            num_warmup_steps=self.trainer_args.warmup_ratio,
+            num_training_steps=self.num_training_steps
+        )
+
         return scheduler
 
     def configure_optimizer_scheduler(self):
@@ -161,7 +165,7 @@ class Trainer(object):
         # outputs[0]: extractive loss, outputs[1]: abstractive loss
         outputs: Tuple[torch.Tensor, torch.Tensor] = self.exab(**batch)
         
-        # ext_loss = self.bce_loss(outputs[0], ext_label.float())
+        ext_loss = self.bce_loss(outputs[0], ext_label.float())
         
         # decoder_input_ids: [100,1,2,3,4, 5 ]
         # decoder_labels:    [ 1 ,2,3,4,5]
@@ -170,15 +174,14 @@ class Trainer(object):
         logits = outputs[1][:, :-1].contiguous().view(-1, outputs[1].size(-1))
         abs_loss = self.cross_ent_loss(logits, abs_label)
         
-        # loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
-        loss = abs_loss
+        loss: torch.Tensor = self.auto_weighted_loss(ext_loss, abs_loss)
         loss = loss/self.trainer_args.accumulate_grad_batches
         
         loss.backward()
         
         return loss.item()*self.trainer_args.accumulate_grad_batches
 
-    def validate(self, dataloader):
+    def validate(self, dataloader: Iterable):
         self.exab.eval()
         with torch.no_grad():
         
@@ -237,7 +240,7 @@ class Trainer(object):
             val_losses.append(val_loss)
             abs_losses.append(abs_loss)
 
-            early_stopping(val_loss=val_loss)
+            early_stopping(val_loss=abs_loss)
             if early_stopping.is_save:
                 self.save(epoch=epoch+1, is_best_ckpt=early_stopping.is_best_ckpt)
             if early_stopping.early_stop:
@@ -418,12 +421,12 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
-    parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--task', type=str, default='task6')
     from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()
-    set_gpu(idx=args.gpu, cuda_visible_devices='0,1')
+    set_gpu(idx=args.gpu, cuda_visible_devices='0')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(args.seed)
 

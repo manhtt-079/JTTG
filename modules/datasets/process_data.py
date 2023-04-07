@@ -83,11 +83,17 @@ class DataPreparationBase(ABC):
             List[int]: label
         """
         src_ = [' '.join(sent) for sent in src]
-
-        r2_fscores = np.asarray([scorer.score(target=tgt, prediction=s)['rouge2'].fmeasure for s in src_])
-        label = np.zeros_like(r2_fscores, dtype=np.int32)
         
-        sorted_scores = (-r2_fscores).argsort()[:top_k]
+        def get_score(target: str, prediction: str):
+            temp = scorer.score(target=target, prediction=prediction)
+            score = np.mean([v.fmeasure for _, v in temp.items()])
+            
+            return score
+
+        fscores = np.asarray([get_score(target=tgt, prediction=s) for s in src_])
+        label = np.zeros_like(fscores, dtype=np.int32)
+        
+        sorted_scores = (-fscores).argsort()[:top_k]
         label[sorted_scores] = 1
         
         return label.tolist()

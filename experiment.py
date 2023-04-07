@@ -7,7 +7,7 @@ EXPERIMENT_MAP = {
     'task2': {
         'dataset_name': 'bill_sum',
         'model_name': 'bart-sum',
-        'use_us_test': True
+        'use_us_test': False
     },
     'task3': {
         'dataset_name': 'reddit_tifu',
@@ -17,7 +17,7 @@ EXPERIMENT_MAP = {
     'task4': {
         'dataset_name': 'bill_sum',
         'model_name': 't5-sum',
-        'use_us_test': True
+        'use_us_test': False
     },
     'task5': {
         'dataset_name': 'vnds',

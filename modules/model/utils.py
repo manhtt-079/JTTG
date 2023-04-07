@@ -170,7 +170,7 @@ class EarlyStopping:
             else:
                 self.is_save = False
             if self.counter >= self.patience:
-                self.early_stop = True
+                self.early_stop = True    
             self.is_best_ckpt = False
         else:
             self.best_score = score
