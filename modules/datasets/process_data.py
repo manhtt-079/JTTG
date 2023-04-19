@@ -22,7 +22,8 @@ from config.dataset import (
     BillSum_DataPreparationConf,
     VnDS_DataPreparationConf,
     ViNewsQA_DataPRConf,
-    ViQuAD_DataPRConf
+    ViQuAD_DataPRConf,
+    GovReportDatasetConf
 )
 try:
     nltk.data.find('tokenizers/punkt')
@@ -556,7 +557,53 @@ class BillSumDataPreparation(ENDataPreparation):
         self.process_and_save_data(df=us_test_df, output_dir=self.conf.output_dir, name='us_test')
         logger.info(f"Processing ca_test data")
         self.process_and_save_data(df=ca_test_df, output_dir=self.conf.output_dir, name='ca_test')
-      
 
+class GovReportDataPreparation(ENDataPreparation):
+    
+    def __init__(self, conf: GovReportDatasetConf) -> None:
+        super().__init__(conf)
+        self.setup()
+        logger.info('Setup done!')
+
+    def setup(self):
+        if not os.path.exists(self.conf.output_dir):
+            os.system(f"mkdir -p {self.conf.output_dir}")
+            os.system(f"chmod -R 777 {self.conf.output_dir}")
+        
+        return True
+    
+    def process_and_save_data(self, df: pd.DataFrame, output_dir: str, name: str):
+        logger.info(f"Processing {name} data with no. samples: {len(df)}")
+        self.process_data(df=df, output_dir=output_dir, file_name=name+'.json')
+    
+    def change_col_name_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        df.columns = [self.conf.src_col_name, self.conf.tgt_col_name]
+        df[self.conf.src_col_name] = df[self.conf.src_col_name].apply(lambda x: self.clean_text(x))
+        df[self.conf.tgt_col_name] = df[self.conf.tgt_col_name].apply(lambda x: self.clean_text(x))
+        df = df[(df[self.conf.src_col_name]!='') & (df[self.conf.tgt_col_name]!='')]
+        df.drop_duplicates(subset= [self.conf.src_col_name, self.conf.tgt_col_name], inplace=True)
+        
+        return df
+        
+        
+    def build_data(self):
+        logger.info("Reading raw_data")
+        train_df: pd.DataFrame = pd.read_csv(self.conf.train_path).dropna()
+        val_df: pd.DataFrame = pd.read_csv(self.conf.val_path).dropna()
+        test_df: pd.DataFrame = pd.read_csv(self.conf.test_path).dropna()
+        
+        train_df = self.change_col_name_and_clean(df=train_df)
+        val_df = self.change_col_name_and_clean(df=val_df)
+        test_df = self.change_col_name_and_clean(df=test_df)
+        
+        logger.info(f"Processing training data")
+        self.process_and_save_data(df=train_df, output_dir=self.conf.output_dir, name='train')
+        
+        logger.info(f'Processing val data')
+        self.process_and_save_data(df=val_df, output_dir=self.conf.output_dir, name='val')
+
+        logger.info(f'Processing test data')
+        self.process_and_save_data(df=test_df, output_dir=self.conf.output_dir, name='test')
+        
 if __name__=='__main__':
     pass

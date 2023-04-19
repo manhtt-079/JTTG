@@ -89,6 +89,19 @@ class ViQuAD_DataPRConf(DataPreparationConf):
         self.output_dir = self.conf[self.sec_name]['output_dir']
         self.max_nsents = int(self.conf[self.sec_name]['max_nsents'])
 
+class GovReportDataPRConf(DataPreparationConf):
+    
+    def __init__(self, config_file: str):
+        super().__init__(config_file)
+        self.sec_name = 'gov-report'
+        self.src_col_name = self.conf[self.sec_name]['src_col_name']
+        self.tgt_col_name = self.conf[self.sec_name]['tgt_col_name']
+        self.train_path = self.conf[self.sec_name]['train_path']
+        self.val_path = self.conf[self.sec_name]['val_path']
+        self.test_path = self.conf[self.sec_name]['test_path']
+        self.output_dir = self.conf[self.sec_name]['output_dir']
+        self.top_k = int(self.conf[self.sec_name]['top_k'])
+
 
 if __name__ == '__main__':
     pass

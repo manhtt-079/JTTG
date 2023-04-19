@@ -342,53 +342,58 @@ class Trainer(object):
         }, path)
 
     # don't use anymore
-    def resume(self, epochs_to_resume: int):
+    def resume(self, max_epoch: int):
+        assert max_epoch > current_epoch, "Max epoch must greater than current epoch"
         current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['best_checkpoint'])
         logger.info(f"Resume training model from epoch {current_epoch}...")
+        
         early_stopping = EarlyStopping(patience=self.patience, delta=self.delta)
-        train_losses, val_losses = [], []
-        for epoch in range(current_epoch, current_epoch + epochs_to_resume):
-            start = time.time()
+        train_losses, val_losses, abs_losses = [], [], []
+        for epoch in range(self.trainer_args.max_epochs):
+            start: float = time.time()
             self.exab.train()
 
-            running_loss = 0.0
+            running_loss: float = 0.0
             n_iters = len(self.train_dataloader)
+            self.optimizer.zero_grad()
             for idx, batch in enumerate(self.train_dataloader):
                 
                 loss: float = self.step(batch=batch)
                 running_loss += loss
-                if (idx+1) % self.accumulation_steps == 0 or (idx+1) == n_iters:
+                if (idx+1) % self.trainer_args.accumulate_grad_batches == 0 or (idx+1) == n_iters:
                     self.optimizer.step()
                     self.scheduler.step()
                     self.optimizer.zero_grad()
-                if idx+1 % self.eval_steps == 0 or idx == 0:
-                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.epochs, idx+1, n_iters, running_loss/(idx+1)))
-            else:
-                train_loss = running_loss/n_iters
-                print("Epochs: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.epochs, idx+1, n_iters, train_loss))
+                if (idx+1) % self.trainer_args.eval_steps == 0 or idx == 0:
+                    logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}".format(epoch+1, self.trainer_args.max_epochs, idx+1, n_iters, running_loss/(idx+1)))
 
-                print("Evaluating...")
-                val_loss, acc, f1, auc = self.validate(dataloader=self.val_dataloader)
-                print("     Val loss: {} - accuracy: {} - f1-score: {} - auc: {}\n".format(val_loss, acc, f1, auc))
+            train_loss = running_loss/n_iters
+            logger.info("Epoch: {}/{} - iter: {}/{} - train_loss: {}\n".format(epoch+1, self.trainer_args.max_epochs, idx+1, n_iters, train_loss))
 
-                train_losses.append(train_losses)
-                val_losses.append(val_losses)
+            logger.info(f"-----:----- [Epoch: {epoch+1}] - Evaluating -----:-----")
+            val_loss, abs_loss = self.validate(dataloader=self.val_dataloader)
+            logger.info("     Val loss: {}".format(val_loss))
+            logger.info("     Abstractive loss: {}".format(abs_loss))
 
-                early_stopping(val_loss=val_loss)
-                if early_stopping.is_save:
-                    ckp_path = os.path.join(self.checkpoint, 'ckp'+str(epoch+1)+'.pt')
-                    logger.info(f"Saving model to: {ckp_path}")
-                    self.config_parser.set(self.conf.trainer.sec_name, 'resume_best_checkpoint', ckp_path)
-                    self.save_config()
-                    self.save_model(current_epoch=epoch+1, path=ckp_path)
-                if early_stopping.early_stop:
-                    logger.info(f"Early stopping. Saving log loss to: {os.path.join(self.log, 'resume_loss.txt')}")
-                    break
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            abs_losses.append(abs_loss)
 
-            logger.info(f"Total time per epoch: {time.time()-start} seconds")
-        train_losses, val_losses = np.array(train_losses).reshape(-1,1), np.array(val_losses).reshape(-1,1)
-        np.savetxt(os.path.join(self.log, 'resume_loss.txt'), np.hstack((train_losses, val_losses)), delimiter='#')
-
+            early_stopping(val_loss=abs_loss)
+            if early_stopping.is_save:
+                self.save(epoch=epoch+1, is_best_ckpt=early_stopping.is_best_ckpt)
+            if early_stopping.early_stop:
+                logger.info(f"Early stopping.")
+                break
+        
+            logger.info(f"Total time per epoch: {time.time()-start} seconds\n")
+        
+        logger.info(f"Saving log loss to: {os.path.join(self.trainer_args.log, 'loss.txt')}")
+        train_losses = np.asanyarray(train_losses).reshape(-1,1)
+        val_losses = np.asarray(val_losses).reshape(-1,1)
+        abs_losses = np.asarray(abs_losses).reshape(-1, 1)
+        np.savetxt(os.path.join(self.trainer_args.log, 'resume.txt'), np.hstack((train_losses, val_losses, abs_losses)), delimiter='#')
+        
         logger.info("Start testing...")
         logger.info(f"Loading the best model from {self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint']}...")
         current_epoch = self.load_model(path=self.config_parser[self.conf.trainer.sec_name]['resume_best_checkpoint'])
@@ -422,7 +427,7 @@ if __name__=='__main__':
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--task', type=str, default='task6')
+    parser.add_argument('--task', type=str, default='task2')
     from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()
@@ -433,6 +438,9 @@ if __name__=='__main__':
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)
     trainer = Trainer(config=config, device=device)
+    model_ckpt = '/home/int2-user/project_sum/checkpoint/t5-sum-gov/ckpt20.pt'
+    logger.info(f'Loading model from checkpoint: {model_ckpt}')
+    trainer.load_model(model_ckpt)
     
     trainer.fit()
     

@@ -47,6 +47,14 @@ EXPERIMENT_MAP = {
         'dataset_name': 'viquad',
         'model_name': 'vit5-sum'
     },
+    'task12': {
+        'dataset_name': 'gov-report',
+        'model_name': 'bart-sum'
+    },
+    'task13': {
+        'dataset_name': 'gov-report',
+        'model_name': 't5-sum'
+    }
 }
 
 if __name__=='__main__':

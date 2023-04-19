@@ -88,7 +88,19 @@ class BillSumDatasetConf(DatasetBaseConf):
         self.train_path = self.config[self.sec_name]['train_path']
         self.valid_path = self.config[self.sec_name]['valid_path']
         self.test_path = self.config[self.sec_name]['us_test_path'] if self.use_us_test else self.config[self.sec_name]['ca_test_path']
-
+        
+class GovReportDatasetConf(DatasetBaseConf):
+    def __init__(
+        self,
+        config: configparser.ConfigParser,
+        sec_name: str = 'gov-report_dataset',
+        is_long: bool = True,
+        use_us_test: bool = True
+    ) -> None:
+        super().__init__(config, sec_name, is_long, use_us_test)
+        self.train_path = self.config[self.sec_name]['train_path']
+        self.valid_path = self.config[self.sec_name]['valid_path']
+        self.test_path = self.config[self.sec_name]['test_path']
 
 class RedditTifuDatasetConf(DatasetBaseConf):
     def __init__(
@@ -193,7 +205,8 @@ class Config(object):
         'bill_sum': BillSumDatasetConf,
         'vnds':  VnDsDatasetConf,
         'vinewsqa': ViNewsQADatasetConf,
-        'viquad': ViQuadDatasetConf
+        'viquad': ViQuadDatasetConf,
+        'gov-report': GovReportDatasetConf
     }
     
     MODEL_CONF_ARCHIVE_LIST = {
@@ -201,7 +214,8 @@ class Config(object):
         'bart-sum',
         't5-sum',
         'vit5-sum',
-        'bartpho-sum'
+        'bartpho-sum',
+        'gov-report'
     }
     
     def __init__(

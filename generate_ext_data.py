@@ -6,7 +6,8 @@ from config.dataset import (
     VnDS_DataPreparationConf,
     DataPreparationConf,
     ViNewsQA_DataPRConf,
-    ViQuAD_DataPRConf
+    ViQuAD_DataPRConf,
+    GovReportDataPRConf
 )
 
 from modules.datasets.process_data import (
@@ -14,7 +15,8 @@ from modules.datasets.process_data import (
     BillSumDataPreparation,
     VNDSDataPreparation,
     ViNewsQADataPreparation,
-    ViQuADDataPreparation
+    ViQuADDataPreparation,
+    GovReportDataPreparation
 )
 
 
@@ -24,6 +26,7 @@ PROCESSOR_ARCHIVE_MAP = {
     'vnds': {'conf': VnDS_DataPreparationConf, 'processor': VNDSDataPreparation},
     'vinewsqa': {'conf': ViNewsQA_DataPRConf, 'processor': ViNewsQADataPreparation},
     'viquad': {'conf': ViQuAD_DataPRConf, 'processor': ViQuADDataPreparation},
+    'gov-report': {'conf': GovReportDataPRConf, 'processor': GovReportDataPreparation}
 }
 
 def main():
