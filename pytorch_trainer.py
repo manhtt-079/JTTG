@@ -47,8 +47,8 @@ class Trainer(object):
         logger.info("Get dataloader")
         self.train_dataloader = self.get_dataloader(data_path=self.dataset_args.train_path, shuffle=True)
         self.val_dataloader = self.get_dataloader(data_path=self.dataset_args.valid_path)
-        self.test_dataloader = None
-
+        self.test_dataloader = self.get_dataloader(data_path=self.dataset_args.test_path, factor=self.trainer_args.factor_test_size)
+        
         self.num_training_steps = len(self.train_dataloader) * self.trainer_args.max_epochs
         self.num_warmup_steps = int(self.trainer_args.warmup_ratio * self.num_training_steps)
 
@@ -248,6 +248,8 @@ class Trainer(object):
                 break
         
             logger.info(f"Total time per epoch: {time.time()-start} seconds\n")
+            logger.info(f'Testing with epoch: {epoch+1}')
+            self.test()
             
         logger.info(f"Saving log loss to: {os.path.join(self.trainer_args.log, 'loss.txt')}")
         train_losses = np.asanyarray(train_losses).reshape(-1,1)
@@ -287,9 +289,9 @@ class Trainer(object):
         return results
         
     def test(self):
-        del self.train_dataloader
-        del self.val_dataloader
-        self.test_dataloader = self.get_dataloader(data_path=self.dataset_args.test_path, factor=self.trainer_args.factor_test_size)
+        # del self.train_dataloader
+        # del self.val_dataloader
+        # self.test_dataloader = self.get_dataloader(data_path=self.dataset_args.test_path, factor=self.trainer_args.factor_test_size)
         rouge_score = self.compute_rouge_score(dataloader=self.test_dataloader)
         logger.info("     Rouge_score: {}\n".format(rouge_score))
 
@@ -427,7 +429,7 @@ if __name__=='__main__':
     parser.add_argument('--config_file', type=str, default='./config/config.ini', help='The configuration file.')
     parser.add_argument('--seed', type=int, default=42, help='The random seed for reproducibility.')
     parser.add_argument('--gpu', type=int, default=0)
-    parser.add_argument('--task', type=str, default='task2')
+    parser.add_argument('--task', type=str, default='task13')
     from experiment import EXPERIMENT_MAP
     
     args = parser.parse_args()
@@ -438,9 +440,10 @@ if __name__=='__main__':
     kwargs = EXPERIMENT_MAP[args.task]
     config = Config(config_file=args.config_file, **kwargs)
     trainer = Trainer(config=config, device=device)
-    model_ckpt = '/home/int2-user/project_sum/checkpoint/t5-sum-gov/ckpt20.pt'
+    model_ckpt = '/home/int2-user/project_sum/checkpoint/t5-sum-gov/ckpt9.pt'
     logger.info(f'Loading model from checkpoint: {model_ckpt}')
     trainer.load_model(model_ckpt)
+    trainer.optimizer, trainer.scheduler = trainer.configure_optimizer_scheduler()
     
     trainer.fit()
     

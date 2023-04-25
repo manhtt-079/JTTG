@@ -23,7 +23,7 @@ from config.dataset import (
     VnDS_DataPreparationConf,
     ViNewsQA_DataPRConf,
     ViQuAD_DataPRConf,
-    GovReportDatasetConf
+    GovReportDataPRConf
 )
 try:
     nltk.data.find('tokenizers/punkt')
@@ -86,10 +86,10 @@ class DataPreparationBase(ABC):
         src_ = [' '.join(sent) for sent in src]
         
         def get_score(target: str, prediction: str):
-            temp = scorer.score(target=target, prediction=prediction)
-            score = np.mean([v.fmeasure for _, v in temp.items()])
+            score = scorer.score(target=target, prediction=prediction)
+            # score = np.mean([v.fmeasure for _, v in temp.items()])
             
-            return score
+            return score['rouge2'].fmeasure
 
         fscores = np.asarray([get_score(target=tgt, prediction=s) for s in src_])
         label = np.zeros_like(fscores, dtype=np.int32)
@@ -560,7 +560,7 @@ class BillSumDataPreparation(ENDataPreparation):
 
 class GovReportDataPreparation(ENDataPreparation):
     
-    def __init__(self, conf: GovReportDatasetConf) -> None:
+    def __init__(self, conf: GovReportDataPRConf) -> None:
         super().__init__(conf)
         self.setup()
         logger.info('Setup done!')
