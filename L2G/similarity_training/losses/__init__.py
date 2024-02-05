@@ -1,0 +1,2 @@
+from .MultipleNegativesRankingLoss import MultipleNegativesRankingLoss
+from .TripletLoss import TripletLoss
