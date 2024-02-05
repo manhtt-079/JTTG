@@ -1,0 +1,42 @@
+picker:
+  dataset: Rewrite20k
+  ckpts_dir: ckpts/
+  lr: 2e-3
+  eps: 1e-8
+  ignore_index: -100
+  num_epochs: 5
+  dev_interval: 500
+  accumulation_steps: 2
+  benchmark: True
+  load_premodel: False
+
+writer:
+  dataset: Rewrite20k
+  ckpts_dir: ckpts/
+  lr: 5e-5
+  eps: 1e-8
+  weight_decay: 0.01
+  warm_up_ratio: 0.0
+  ignore_index: -100
+  num_epochs: 10
+  dev_interval: 500
+  accumulation_steps: 2
+  benchmark: True
+  load_premodel: False
+  num_beams: 8
+
+jointmodel:
+  dataset: Rewrite20k
+  ckpts_dir: ckpts/
+  lr: 5e-5
+  eps: 1e-8
+  weight_decay: 0.01
+  warm_up_ratio: 0.0
+  ignore_index: -100
+  num_epochs: 6
+  dev_interval: 500
+  accumulation_steps: 2
+  loss_weight: 1
+  benchmark: True
+  load_premodel: False
+  num_beams: 8

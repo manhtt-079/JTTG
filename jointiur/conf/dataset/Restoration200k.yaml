@@ -1,0 +1,16 @@
+ratio: 1
+name: Restoration200k_ratio=${dataset.ratio}
+lang: zh
+data_root: data/processed/Restoration200k_ratio=${dataset.ratio}
+pretrained_model: lemon234071/t5-base-Chinese
+batch_size: {train: 6, dev: 6, test: 16}
+shuffle: {train: True, dev: False, test: False}
+num_workers: 2
+dialog_length: 400
+gold_length: 100
+sp_token1: "[X1]"
+sp_token2: "[X2]"
+num_added_token: 2
+len_dialog: 400
+len_query: 100
+label_type: defined

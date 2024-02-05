@@ -1,0 +1,58 @@
+name: picker
+ckpts_root: ckpts
+
+Restoration200k:
+  pretrained_model: lemon234071/t5-base-Chinese
+  num_added_token: ${dataset.num_added_token}
+  token_embeddings_size: 35364 # 35362+2 where 35362 from BertTokenizer and 2 from special tokens
+  FeedForward:
+    dropout: 0.5
+    input_dim: 768
+    hidden_dim1: 256
+    hidden_dim2: 64
+  Linear:
+    input_dim: 64
+    output_dim_hard: 3 # 0,1,2 for span tag prediction.
+    output_dim_soft: 1
+
+Rewrite20k:
+  pretrained_model: lemon234071/t5-base-Chinese
+  num_added_token: ${dataset.num_added_token}
+  token_embeddings_size: 35364 # 35362+2 where 35362 from BertTokenizer and 2 from special tokens
+  FeedForward:
+    dropout: 0.5
+    input_dim: 768
+    hidden_dim1: 256
+    hidden_dim2: 64
+  Linear:
+    input_dim: 64
+    output_dim_hard: 3 # 0,1,2 for span tag prediction.
+    output_dim_soft: 1
+
+CANARD:
+  pretrained_model: t5-base
+  num_added_token: ${dataset.num_added_token}
+  token_embeddings_size: 32102 # 32100+2 where 32100 from BertTokenizer and 2 from special tokens
+  FeedForward:
+    dropout: 0.5
+    input_dim: 768
+    hidden_dim1: 256
+    hidden_dim2: 64
+  Linear:
+    input_dim: 64
+    output_dim_hard: 3 # 0,1,2 for span tag prediction.
+    output_dim_soft: 1
+
+TASK:
+  pretrained_model: t5-base
+  num_added_token: ${dataset.num_added_token}
+  token_embeddings_size: 32102 # 32100+2 where 32100 from BertTokenizer and 2 from special tokens
+  FeedForward:
+    dropout: 0.5
+    input_dim: 768
+    hidden_dim1: 256
+    hidden_dim2: 64
+  Linear:
+    input_dim: 64
+    output_dim_hard: 3 # 0,1,2 for span tag prediction.
+    output_dim_soft: 1

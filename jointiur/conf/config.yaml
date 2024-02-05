@@ -1,0 +1,12 @@
+defaults:
+  - model: jointmodel
+  - dataset: CANARD
+  - training: ${dataset}
+
+# mlflow:
+#   experiment_name: ${defaults.dataset.name}
+
+# model_type: ???
+work_dir: ${hydra:runtime.cwd}
+save_dir: ${work_dir}/results
+log_dir: ${work_dir}/logs
