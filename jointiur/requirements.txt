@@ -7,7 +7,7 @@ fasttext==0.9.2
 mlflow==2.15.1
 stopwordsiso==0.6.1
 jieba==0.42.1
-mlflow==1.20.2
+mlflow==2.16.0
 rouge==1.0.1
 SentencePiece==0.1.96
 omegaconf==2.1.1
